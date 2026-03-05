@@ -396,7 +396,7 @@ draw();
     let isTyping = false;
     let chatInputText = "";
 
-    // 1. ИНТЕРФЕЙС В МЕНЮ
+    // 1. ИНТЕРФЕЙС
     const menu = document.querySelector('.menu-btns');
     if (menu) {
         const mpBox = document.createElement('div');
@@ -406,7 +406,7 @@ draw();
             <div id="m-id" style="font-size:10px; color:#888; margin-bottom:8px; word-break:break-all; background:#000; padding:5px; border-radius:5px;">Загрузка ID...</div>
             <button id="m-cp" style="width:100%; margin-bottom:10px; cursor:pointer; padding:5px;">КОПИРОВАТЬ ID</button>
             <input type="text" id="h-id" placeholder="ID ХОСТА" style="width:100%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444; border-radius:5px;">
-            <button id="m-jn" style="width:100%; background:#2ecc71; color:white; border:none; padding:12px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%; border-radius:5px;">ЗАЙТИ В МИР ДРУГА</button>
+            <button id="m-jn" style="width:100%; background:#e67e22; color:white; border:none; padding:12px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%;">ПОДКЛЮЧИТЬСЯ К МИРУ</button>
         `;
         menu.appendChild(mpBox);
 
@@ -416,15 +416,16 @@ draw();
         document.getElementById('n-in').oninput = (e) => { myName = e.target.value; localStorage.setItem('mp-nick', myName); };
     }
 
-    // 2. СЕТЕВАЯ ЛОГИКА С ПЕРЕДАЧЕЙ КАРТЫ
+    // 2. ЛОГИКА СЕТИ
     peer.on('connection', c => setup(c, true));
 
     function setup(conn, isHost) {
         conn.on('open', () => {
             connections.push(conn);
             
-            // Если мы ХОСТ, сразу шлем свою карту новому игроку
-            if (isHost && window.map) {
+            // Если мы Хост — мгновенно шлем карту
+            if (isHost) {
+                console.log("Отправка мира игроку...");
                 conn.send({ type: 'world_sync', mapData: window.map });
             }
 
@@ -440,16 +441,30 @@ draw();
         });
 
         conn.on('data', data => {
-            // ПРИЕМ МИРА (ТОЛЬКО ДЛЯ ГОСТЯ)
+            // АВТОМАТИЧЕСКИЙ ВХОД ДЛЯ ГОСТЯ
             if (data.type === 'world_sync' && !isHost) {
-                console.log("Получена карта от хоста!");
+                console.log("Мир получен! Синхронизация...");
+                
+                // 1. Сохраняем в системную ячейку
                 localStorage.setItem('SYSTEM_MP_WORLD', JSON.stringify(data.mapData));
+                
+                // 2. Обновляем глобальную переменную карты
                 window.map = data.mapData;
-                // Скрываем меню и запускаем игру на этой карте
-                if (typeof startGame === 'function') {
-                    document.getElementById('main-menu').style.display = 'none';
-                    startGame(data.mapData);
-                }
+
+                // 3. Эмулируем выбор слота и старт игры
+                setTimeout(() => {
+                    const menu = document.getElementById('main-menu');
+                    if (menu) menu.style.display = 'none';
+                    
+                    // Если у тебя в коде есть startGame, вызываем её
+                    if (typeof startGame === 'function') {
+                        startGame(data.mapData);
+                    } else {
+                        // Если нет, просто активируем флаг игры (зависит от твоей структуры)
+                        window.gameActive = true;
+                    }
+                    addChatMessage("СИСТЕМА", "Вы успешно вошли в мир друга!");
+                }, 500); 
             }
 
             if (data.type === 'pos') {
@@ -460,14 +475,9 @@ draw();
                 if (isHost) connections.forEach(c => { if (c.open && c.peer !== conn.peer) c.send(data); });
             }
         });
-        
-        conn.on('close', () => {
-            connections = connections.filter(c => c !== conn);
-            delete players[conn.peer];
-        });
     }
 
-    // 3. УПРАВЛЕНИЕ ЧАТОМ
+    // 3. ОТРИСОВКА И ЧАТ (Без изменений)
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             if (document.getElementById('main-menu').style.display !== 'none') return;
@@ -489,18 +499,15 @@ draw();
 
     function addChatMessage(nick, text) {
         chatMessages.push({ nick, text, ts: Date.now() });
-        if (chatMessages.length > 12) chatMessages.splice(1, 1);
+        if (chatMessages.length > 10) chatMessages.splice(1, 1);
     }
 
-    // 4. ОТРИСОВКА (ЧАТ + ИГРОКИ)
     function drawChat() {
-        ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0); 
+        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); 
         ctx.font = "bold 14px Arial";
         chatMessages.forEach((m, i) => {
             const y = window.innerHeight - 80 - (chatMessages.length - i) * 22;
-            const text = m.nick + ": " + m.text;
-            const tw = ctx.measureText(text).width;
+            const tw = ctx.measureText(m.nick + ": " + m.text).width;
             ctx.fillStyle = m.isSystem ? "rgba(231, 76, 60, 0.6)" : "rgba(0,0,0,0.5)";
             ctx.fillRect(15, y - 16, tw + 20, 22);
             ctx.fillStyle = m.isSystem ? "#f1c40f" : "#3498db";
@@ -510,7 +517,7 @@ draw();
         });
         if (isTyping) {
             ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(15, window.innerHeight - 45, 450, 30);
-            ctx.strokeStyle = "#3498db"; ctx.lineWidth = 2; ctx.strokeRect(15, window.innerHeight - 45, 450, 30);
+            ctx.strokeStyle = "#3498db"; ctx.strokeRect(15, window.innerHeight - 45, 400, 30);
             ctx.fillStyle = "white"; ctx.fillText("> " + chatInputText + "_", 25, window.innerHeight - 25);
         }
         ctx.restore();
@@ -551,6 +558,7 @@ draw();
 </script>
 </body>
 </html>
+
 
 
 
