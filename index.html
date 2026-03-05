@@ -391,64 +391,64 @@ draw();
     const peer = new Peer();
     let players = {}; 
     let connections = [];
-    let chatMessages = [{ nick: "СИСТЕМА", text: "/Нажмите Enter чтобы писать в чат/", isSystem: true }]; 
+    let chatMessages = [{ nick: "СИСТЕМА", text: "Введите ID хоста и нажмите кнопку", isSystem: true }]; 
     let myName = localStorage.getItem('mp-nick') || "Player_" + Math.floor(Math.random() * 999);
-    let isTyping = false;
-    let chatInputText = "";
 
-    // 1. СОЗДАЕМ СКРЫТЫЙ СЛОТ ДЛЯ МУЛЬТИПЛЕЕРА
+    // 1. ИНТЕРФЕЙС
     const menuBtns = document.querySelector('.menu-btns');
     if (menuBtns) {
-        // Создаем невидимую кнопку, которая ведет себя как обычный слот
-        const hiddenSlot = document.createElement('div');
-        hiddenSlot.id = "slot-mp-hidden";
-        hiddenSlot.style.display = "none"; 
-        // ВАЖНО: тут мы вызываем ТВОЮ функцию загрузки, которая висит на кнопках Карта 1, 2
-        // Если у тебя в HTML написано loadGame(0), оставляем так.
-        hiddenSlot.onclick = function() { 
-            if (typeof loadGame === 'function') loadGame('MP_SYSTEM'); 
-            else if (typeof selectSlot === 'function') selectSlot('MP_SYSTEM');
-        };
-        document.body.appendChild(hiddenSlot);
-
-        // UI Мультиплеера
         const mpBox = document.createElement('div');
-        mpBox.style = "margin-top:10px; background:#222; padding:15px; border-radius:12px; border:2px solid #3498db; color:white; width:280px; text-align:center; z-index:1001;";
+        mpBox.style = "margin-top:10px; background:#222; padding:15px; border-radius:12px; border:2px solid #3498db; color:white; width:280px; text-align:center;";
         mpBox.innerHTML = `
-            <input type="text" id="n-in" value="${myName}" style="width:100%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444; border-radius:5px;">
-            <div id="m-id" style="font-size:10px; color:#888; margin-bottom:8px; word-break:break-all; background:#000; padding:5px; border-radius:5px;">ID...</div>
-            <button id="m-cp" style="width:100%; margin-bottom:10px; cursor:pointer; padding:5px;">КОПИРОВАТЬ ID</button>
-            <input type="text" id="h-id" placeholder="ВСТАВЬ ID ДРУГА" style="width:100%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444; border-radius:5px;">
-            <button id="m-jn" style="width:100%; background:#e67e22; color:white; border:none; padding:12px; border-radius:5px; cursor:pointer; font-weight:bold;">ЗАЙТИ В МИР ДРУГА</button>
+            <input type="text" id="n-in" value="${myName}" style="width:100%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444;">
+            <div id="m-id" style="font-size:10px; color:#888; margin-bottom:8px; background:#000; padding:5px;">ID...</div>
+            <input type="text" id="h-id" placeholder="ID ХОСТА" style="width:100%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444;">
+            <button id="m-jn" style="width:100%; background:#e67e22; color:white; border:none; padding:12px; cursor:pointer; font-weight:bold;">ЗАЙТИ В МИР ДРУГА</button>
         `;
         menuBtns.appendChild(mpBox);
 
         peer.on('open', id => { document.getElementById('m-id').innerText = id; });
-        document.getElementById('m-cp').onclick = () => { navigator.clipboard.writeText(document.getElementById('m-id').innerText); alert("ID скопирован!"); };
-        document.getElementById('m-jn').onclick = () => { setup(peer.connect(document.getElementById('h-id').value.trim()), false); };
+        document.getElementById('m-jn').onclick = () => {
+            const hostId = document.getElementById('h-id').value.trim();
+            if(hostId) setup(peer.connect(hostId), false);
+        };
         document.getElementById('n-in').oninput = (e) => { myName = e.target.value; localStorage.setItem('mp-nick', myName); };
     }
 
-    // 2. ЛОГИКА ПРИЕМА МИРА
-    function handleIncomingWorld(mapData) {
-        console.log("Мир получен. Имитируем загрузку...");
+    // 2. ЛОГИКА ВХОДА (ЧЕРЕЗ ПЕРЕЗАПИСЬ ПЕРВОГО СЛОТА)
+    function injectAndStart(mapData) {
+        console.log("Впрыскиваем данные в Слот 1...");
         
-        // Записываем в localStorage так, как это делает твоя игра для слотов
-        // Ключ должен совпадать с тем, что ищет твоя функция loadGame
-        localStorage.setItem('map_MP_SYSTEM', JSON.stringify(mapData));
-        
-        // Даем браузеру 100мс "переварить" запись и имитируем клик по скрытому слоту
+        // Перезаписываем ПЕРВЫЙ слот (индекс 0) картой хоста
+        // Мы пишем во все возможные варианты ключей, которые может юзать твой движок
+        const mapString = JSON.stringify(mapData);
+        localStorage.setItem('map_0', mapString);
+        localStorage.setItem('map0', mapString);
+        localStorage.setItem('save_0', mapString);
+        localStorage.setItem('save0', mapString);
+
+        addChatMessage("СИСТЕМА", "Синхронизация... Заходим!");
+
         setTimeout(() => {
-            const btn = document.getElementById('slot-mp-hidden');
-            if (btn) btn.click();
+            // Ищем первую кнопку "Карта 1" в твоем меню
+            // Обычно это первый элемент с классом 'slot' или первая кнопка в menu-btns
+            const firstSlotBtn = document.querySelector('.menu-btns button') || document.querySelector('.slot');
             
-            // Если после клика меню не закрылось — закрываем силой
+            if (firstSlotBtn) {
+                firstSlotBtn.click(); // Симулируем реальное нажатие
+            } else {
+                // Если кнопку не нашли, вызываем функцию напрямую
+                if (typeof loadGame === 'function') loadGame(0);
+                else if (typeof selectSlot === 'function') selectSlot(0);
+            }
+
+            // На всякий случай скрываем меню через 300мс
             setTimeout(() => {
                 const mm = document.getElementById('main-menu');
                 if (mm) mm.style.display = 'none';
                 window.gameActive = true;
-            }, 500);
-        }, 100);
+            }, 300);
+        }, 200);
     }
 
     // 3. СЕТЬ
@@ -476,7 +476,7 @@ draw();
 
         conn.on('data', data => {
             if (data.type === 'world_sync') {
-                handleIncomingWorld(data.mapData);
+                injectAndStart(data.mapData);
             }
             if (data.type === 'pos') {
                 players[data.id] = data;
@@ -488,59 +488,48 @@ draw();
         });
     }
 
-    // 4. ОТРИСОВКА (БЕЗ ИЗМЕНЕНИЙ)
+    // 4. ОТРИСОВКА ИГРОКОВ
     function addChatMessage(nick, text) {
-        chatMessages.push({ nick, text, ts: Date.now() });
-        if (chatMessages.length > 10) chatMessages.splice(1, 1);
+        chatMessages.push({ nick, text });
+        if (chatMessages.length > 8) chatMessages.shift();
     }
 
     const nRAF = window.requestAnimationFrame;
     window.requestAnimationFrame = function(cb) {
         const r = nRAF(cb);
-        if (window.gameActive) {
-            if (typeof ctx !== 'undefined') {
-                for (let id in players) { if (id !== peer.id) drawRemote(players[id]); }
-                drawChat();
+        if (window.gameActive && typeof ctx !== 'undefined') {
+            for (let id in players) { 
+                if (id !== peer.id) {
+                    const p = players[id];
+                    ctx.save();
+                    // Отрисовка хука
+                    if (p.ha) {
+                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+                        ctx.beginPath(); ctx.moveTo(p.x + 16 - camera.x, p.y + 16 - camera.y);
+                        ctx.lineTo(p.hx - camera.x, p.hy - camera.y); ctx.stroke();
+                    }
+                    // Тело игрока
+                    ctx.translate(p.x - camera.x, p.y - camera.y);
+                    ctx.fillStyle = "white"; ctx.textAlign = "center";
+                    ctx.fillText(p.nick, 16, -10);
+                    ctx.fillStyle = p.bc; ctx.beginPath(); ctx.arc(16, 16, 16, 0, Math.PI*2); ctx.fill();
+                    ctx.restore();
+                }
             }
+            // Отрисовка чата
+            ctx.save(); ctx.setTransform(1,0,0,1,0,0);
+            chatMessages.forEach((m, i) => {
+                ctx.fillStyle = "white"; ctx.fillText(m.nick + ": " + m.text, 20, 30 + i*20);
+            });
+            ctx.restore();
         }
         return r;
     };
-
-    function drawChat() {
-        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.font = "bold 14px Arial";
-        chatMessages.forEach((m, i) => {
-            const y = window.innerHeight - 80 - (chatMessages.length - i) * 22;
-            ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(15, y - 16, ctx.measureText(m.nick + ": " + m.text).width + 20, 22);
-            ctx.fillStyle = m.isSystem ? "#f1c40f" : "#3498db"; ctx.fillText(m.nick + ": ", 20, y);
-            ctx.fillStyle = "white"; ctx.fillText(m.text, 20 + ctx.measureText(m.nick + ": ").width, y);
-        });
-        ctx.restore();
-    }
-
-    function drawRemote(p) {
-        ctx.save();
-        if (p.ha) { 
-            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.moveTo(p.x + 16 - camera.x, p.y + 16 - camera.y);
-            ctx.lineTo(p.hx - camera.x, p.hy - camera.y); ctx.stroke();
-        }
-        ctx.translate(p.x - camera.x, p.y - camera.y);
-        ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
-        ctx.fillText(p.nick || "Player", 16, -12);
-        ctx.fillStyle = p.fc;
-        [{x:7,y:28},{x:23,y:28}].forEach(pos=>{ctx.beginPath();ctx.arc(pos.x,pos.y,8,0,Math.PI*2);ctx.fill();});
-        ctx.fillStyle = p.bc;
-        ctx.beginPath();ctx.arc(16.5,14.5,16.5,0,Math.PI*2);ctx.fill();
-        ctx.fillStyle = 'white'; ctx.beginPath();ctx.arc(10+p.vx*1.5,12,6,0,Math.PI*2);ctx.fill();
-        ctx.beginPath();ctx.arc(24+p.vx*1.5,12,6,0,Math.PI*2);ctx.fill();
-        ctx.fillStyle = 'black'; ctx.beginPath();ctx.arc(11+p.vx*1.5,12,3,0,Math.PI*2);ctx.fill();
-        ctx.beginPath();ctx.arc(25+p.vx*1.5,12,3,0,Math.PI*2);ctx.fill();
-        ctx.restore();
-    }
 })();
 </script>
 </body>
 </html>
+
 
 
 
