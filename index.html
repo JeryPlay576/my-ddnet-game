@@ -389,59 +389,70 @@ draw();
 <script>
 (function() {
     const peer = new Peer();
-    let players = {}; // Объект для хранения ВСЕХ игроков в парти
+    let players = {}; 
+    let connections = []; // Список всех подключений для хоста
 
-    // Создаем UI лобби
     const menu = document.querySelector('.menu-btns');
     if (menu) {
         const mpBox = document.createElement('div');
-        mpBox.id = 'party-lobby';
         mpBox.style = "margin-top:15px; background:#222; padding:15px; border-radius:12px; border:2px solid #3498db; color:white; width:280px; text-align:center;";
         mpBox.innerHTML = `
-            <div style="font-weight:bold; margin-bottom:10px; color:#3498db;">ПАРТИ (ЛОББИ)</div>
+            <div style="font-weight:bold; color:#3498db; margin-bottom:10px;">ПАРТИ (ВСЕ ВИДЯТ ВСЕХ)</div>
             <div id="m-id" style="font-size:10px; color:#888; margin-bottom:5px; background:#111; padding:5px;">Загрузка ID...</div>
             <button id="btn-copy" style="width:100%; margin-bottom:8px; cursor:pointer;">СКОПИРОВАТЬ ID</button>
-            <input type="text" id="t-id" placeholder="ID лидера парти" style="width:100%; padding:5px; margin-bottom:5px; background:#111; color:white; border:1px solid #444;">
-            <button id="btn-join" style="width:100%; background:#2ecc71; color:white; border:none; padding:10px; border-radius:5px; cursor:pointer; font-weight:bold;">ЗАЙТИ В ПАРТИ</button>
-            <div id="mp-stat" style="font-size:10px; color:#aaa; margin-top:8px;">Игроков рядом: 1</div>
+            <input type="text" id="t-id" placeholder="ID Хоста" style="width:100%; padding:5px; margin-bottom:5px; background:#111; color:white; border:1px solid #444;">
+            <button id="btn-join" style="width:100%; background:#2ecc71; color:white; border:none; padding:10px; cursor:pointer; font-weight:bold;">ЗАЙТИ К ХОСТУ</button>
+            <div id="mp-stat" style="font-size:10px; color:#aaa; margin-top:8px;">Игроков в сети: 1</div>
         `;
         menu.appendChild(mpBox);
 
         peer.on('open', id => document.getElementById('m-id').innerText = id);
-        
         document.getElementById('btn-copy').onclick = () => {
             navigator.clipboard.writeText(document.getElementById('m-id').innerText);
-            alert("Твой ID скопирован! Отправь его друзьям.");
+            alert("ID скопирован!");
         };
-
-        document.getElementById('btn-join').onclick = () => {
-            const conn = peer.connect(document.getElementById('t-id').value);
-            setupPartyMember(conn, false);
-        };
+        document.getElementById('btn-join').onclick = () => setup(peer.connect(document.getElementById('t-id').value), false);
     }
 
-    peer.on('connection', conn => setupPartyMember(conn, true));
+    peer.on('connection', conn => setup(conn, true));
 
-    function setupPartyMember(conn, isHost) {
+    function setup(conn, isHost) {
         conn.on('open', () => {
+            if (isHost) connections.push(conn);
+
             setInterval(() => {
-                if(conn.open) conn.send({
-                    id: peer.id, 
-                    x: tee.x, y: tee.y, vx: tee.vx,
-                    bc: document.getElementById('bodyColor').value,
-                    fc: document.getElementById('feetColor').value,
-                    m: isHost ? (window.map || null) : null
-                });
+                if(conn.open) {
+                    conn.send({
+                        type: 'pos',
+                        id: peer.id, 
+                        x: tee.x, y: tee.y, vx: tee.vx,
+                        bc: document.getElementById('bodyColor').value,
+                        fc: document.getElementById('feetColor').value,
+                        m: isHost ? (window.map || null) : null
+                    });
+                }
             }, 30);
         });
 
-        conn.on('data', d => {
-            if(d.m) window.map = d.m;
-            players[d.id] = d; // Добавляем/обновляем игрока в списке
+        conn.on('data', data => {
+            if (data.type === 'pos') {
+                players[data.id] = data;
+                if (data.m) window.map = data.m;
+
+                // ГЛАВНОЕ: Если я хост, я пересылаю полученные данные ВСЕМ остальным
+                if (isHost) {
+                    connections.forEach(c => {
+                        if (c.open && c.peer !== data.id) {
+                            c.send(data); 
+                        }
+                    });
+                }
+            }
             updatePartyCount();
         });
 
         conn.on('close', () => {
+            if (isHost) connections = connections.filter(c => c !== conn);
             delete players[conn.peer];
             updatePartyCount();
         });
@@ -449,24 +460,19 @@ draw();
 
     function updatePartyCount() {
         const count = Object.keys(players).length + 1;
-        document.getElementById('mp-stat').innerText = "Игроков рядом: " + count;
+        document.getElementById('mp-stat').innerText = "Игроков в сети: " + count;
     }
 
-    // ОТРИСОВКА ВСЕХ ИЗ ПАРТИ
     function drawPartyMember(p) {
         ctx.save();
         ctx.translate(p.x - camera.x, p.y - camera.y);
-        
         const w = 33, h = 33;
-        // Ноги
         ctx.fillStyle = p.fc;
         [{x: 7, y: 28}, {x: 23, y: 28}].forEach(pos => {
             ctx.beginPath(); ctx.arc(pos.x, pos.y, 8, 0, Math.PI * 2); ctx.fill();
         });
-        // Тело
         ctx.fillStyle = p.bc;
         ctx.beginPath(); ctx.arc(w/2, h/2 - 2, w/2, 0, Math.PI * 2); ctx.fill();
-        // Глаза
         const eyeX = (p.vx || 0) * 1.5;
         ctx.fillStyle = 'white';
         ctx.beginPath(); ctx.arc(10+eyeX, 12, 6, 0, Math.PI * 2); ctx.fill();
@@ -477,7 +483,6 @@ draw();
         ctx.restore();
     }
 
-    // Внедряемся в отрисовку через requestAnimationFrame
     const nativeRAF = window.requestAnimationFrame;
     window.requestAnimationFrame = function(callback) {
         const res = nativeRAF(callback);
@@ -492,3 +497,4 @@ draw();
 </script>
 </body>
 </html>
+
