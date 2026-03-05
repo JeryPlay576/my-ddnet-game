@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>DDNet</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a1a1a; font-family: 'Segoe UI', sans-serif; user-select: none; }
+        canvas { display: block; }
+        .ui-element { pointer-events: auto; }
+        #main-menu { position: absolute; inset: 0; background: rgba(10,10,10,0.98); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; color: white; }
+        .menu-btns { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+        .save-container { display: flex; align-items: center; gap: 10px; }
+        .save-slot { width: 300px; padding: 20px; background: #222; border: 2px solid #444; border-radius: 12px; cursor: pointer; text-align: center; }
+        .save-slot:hover { border-color: #3498db; background: #2a2a2a; }
+        .rename-btn { background: #34495e; border: none; color: white; padding: 10px; border-radius: 8px; cursor: pointer; font-size: 16px; }
+        .tutor-btn { background: #1abc9c; border: none; color: white; padding: 15px 40px; border-radius: 12px; cursor: pointer; font-weight: bold; margin-bottom: 20px; font-size: 18px; }
+        #hud { position: absolute; top: 20px; left: 20px; color: white; pointer-events: none; text-shadow: 2px 2px black; z-index: 10; display: none; }
+        #hotbar { position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%); display: none; gap: 5px; z-index: 10; padding: 10px; background: rgba(0,0,0,0.85); border-radius: 12px; }
+        .slot { width: 45px; height: 45px; background: #222; border: 2px solid #444; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; font-size: 8px; border-radius: 8px; cursor: pointer; }
+        .slot.active { border-color: #3498db; background: rgba(52,152,219,0.2); }
+        #properties { position: absolute; top: 100px; left: 20px; background: #000; padding: 15px; border-radius: 10px; color: white; border: 1px solid #3498db; display: none; z-index: 20; min-width: 150px; }
+        #tee-settings { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 10px; display: none; }
+        input[type="text"], input[type="number"] { background: #333; border: 1px solid #555; color: white; padding: 5px; border-radius: 4px; width: 100%; box-sizing: border-box; margin-bottom: 5px; }
+        input[type="color"] { width: 100%; height: 30px; border: none; cursor: pointer; background: none; margin-bottom: 10px; }
+        label { font-size: 11px; color: #aaa; display: block; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+<div id="main-menu">
+    <h1 style="color: #3498db; font-size: 50px; margin-bottom: 20px; letter-spacing: 5px;">DDNet</h1>
+    <button class="tutor-btn" onclick="loadTutorial()">ТУТОРИАЛ</button>
+    <div class="menu-btns">
+        <div class="save-container"><div class="save-slot" onclick="loadSlot(1)"><h3 id="title-1">Карта 1</h3><small id="info-1">Пусто</small></div><button class="rename-btn" onclick="renameSlot(1)">✎</button></div>
+        <div class="save-container"><div class="save-slot" onclick="loadSlot(2)"><h3 id="title-2">Карта 2</h3><small id="info-2">Пусто</small></div><button class="rename-btn" onclick="renameSlot(2)">✎</button></div>
+        <div class="save-container"><div class="save-slot" onclick="loadSlot(3)"><h3 id="title-3">Карта 3</h3><small id="info-3">Пусто</small></div><button class="rename-btn" onclick="renameSlot(3)">✎</button></div>
+    </div>
+</div>
+
+<div id="hud">
+    <div style="font-size: 24px; font-weight: 900; color: #3498db;">DDNet</div>
+    <div style="font-size: 12px; opacity: 0.8;">[M] Меню | [E] Редактор | [R] Респаун</div>
+</div>
+
+<div id="properties" class="ui-element">
+    <div id="prop-fields"></div>
+    <button onclick="closeProps()" style="width:100%; margin-top:10px; cursor:pointer; background:#3498db; color:white; border:none; padding:8px; border-radius:4px;">ПРИНЯТЬ</button>
+</div>
+
+<div id="tee-settings" class="ui-element">
+    <label>ТЕЛО</label><input type="color" id="bodyColor" value="#3498db">
+    <label>НОГИ</label><input type="color" id="feetColor" value="#3498db">
+</div>
+
+<div id="hotbar" class="ui-element">
+    <div class="slot active" onclick="setType(1)">ХУК</div>
+    <div class="slot" onclick="setType(2)">СТЕНА</div>
+    <div class="slot" onclick="setType(3)">СМЕРТЬ</div>
+    <div class="slot" onclick="setType(4)" style="color:#3498db">+DJ</div>
+    <div class="slot" onclick="setType(5)" style="color:#e74c3c">-DJ</div>
+    <div class="slot" onclick="setType(6)" style="color:#2ecc71">БУСТ</div>
+    <div class="slot" onclick="setType(7)" style="color:#9b59b6">ФРИЗ</div>
+    <div class="slot" onclick="setType(8)" style="color:#f1c40f">ТЕКСТ</div>
+    <div class="slot" onclick="setType(9)" style="color:#1abc9c">ЧЕК</div>
+</div>
+
+<script>
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+document.body.appendChild(canvas);
+
+let width, height, currentSlot = 1;
+const tileSize = 40;
+let map = [];
+let gameActive = false, editMode = false, selectedType = 1, isDrawing = false, isRemoving = false, isPanning = false;
+let selectedObj = null, mouse = { x: 0, y: 0 }, camera = { x: 0, y: 0 };
+let isTutorial = false;
+
+const TEE_W = 33, TEE_H = 33;
+let spawnPoint = { x: 100, y: 100 };
+let tee = { x: 100, y: 100, vx: 0, vy: 0, bodyColor: '#3498db', feetColor: '#3498db', grounded: false, jumps: 0, canDoubleJump: true, frozen: false, hook: { active: false, x: 0, y: 0 }, walkCycle: 0 };
+
+const phys = { grav: 0.45, groundFric: 0.88, airFric: 0.97, accel: 0.8, airAccel: 0.35, jump: 10, dj: 9, hookPull: 0.9 };
+const keys = {};
+
+const defaultColors = ["", "#444444", "#883333", "#e74c3c", "#3498db", "#e74c3c", "#2ecc71", "#9b59b6", "#f1c40f", "#1abc9c"];
+
+window.onresize = () => { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; };
+window.onresize();
+
+// --- ЗАГРУЗКА ТУТОРИАЛА (НОВАЯ КАРТА) ---
+function loadTutorial() {
+    isTutorial = true;
+    // Данные из твоего tutorial.txt
+    map = [{"x":2,"y":4,"type":2,"text":"Текст","power":16},{"x":1,"y":4,"type":2,"text":"Текст","power":16},{"x":1,"y":3,"type":2,"text":"Текст","power":16},{"x":1,"y":2,"type":2,"text":"Текст","power":16},{"x":1,"y":1,"type":2,"text":"Текст","power":16},{"x":1,"y":0,"type":2,"text":"Текст","power":16},{"x":1,"y":-1,"type":2,"text":"Текст","power":16},{"x":2,"y":-1,"type":2,"text":"Текст","power":16},{"x":3,"y":-1,"type":2,"text":"Текст","power":16},{"x":4,"y":-1,"type":2,"text":"Текст","power":16},{"x":5,"y":-1,"type":2,"text":"Текст","power":16},{"x":6,"y":-1,"type":2,"text":"Текст","power":16},{"x":7,"y":-1,"type":2,"text":"Текст","power":16},{"x":7,"y":0,"type":2,"text":"Текст","power":16},{"x":7,"y":1,"type":2,"text":"Текст","power":16},{"x":3,"y":4,"type":2,"text":"Текст","power":16},{"x":4,"y":4,"type":2,"text":"Текст","power":16},{"x":5,"y":4,"type":2,"text":"Текст","power":16},{"x":6,"y":4,"type":2,"text":"Текст","power":16},{"x":7,"y":4,"type":2,"text":"Текст","power":16},{"x":8,"y":4,"type":2,"text":"Текст","power":16},{"x":2,"y":2,"type":5,"text":"Текст","power":16},{"x":2,"y":3,"type":5,"text":"Текст","power":16},{"x":3,"y":3,"type":5,"text":"Текст","power":16},{"x":3,"y":2,"type":5,"text":"Текст","power":16},{"x":4,"y":1,"type":8,"text":"Нажми E чтобы играть","power":16},{"x":10,"y":1,"type":2,"text":"Текст","power":16},{"x":10,"y":0,"type":2,"text":"Текст","power":16},{"x":10,"y":-1,"type":2,"text":"Текст","power":16},{"x":11,"y":-1,"type":2,"text":"Текст","power":16},{"x":15,"y":-1,"type":2,"text":"Текст","power":16},{"x":16,"y":-1,"type":2,"text":"Текст","power":16},{"x":17,"y":-1,"type":2,"text":"Текст","power":16},{"x":18,"y":-1,"type":2,"text":"Текст","power":16},{"x":19,"y":-1,"type":2,"text":"Текст","power":16},{"x":20,"y":-1,"type":2,"text":"Текст","power":16},{"x":21,"y":-1,"type":2,"text":"Текст","power":16},{"x":22,"y":-1,"type":2,"text":"Текст","power":16},{"x":23,"y":-1,"type":2,"text":"Текст","power":16},{"x":9,"y":4,"type":2,"text":"Текст","power":16},{"x":10,"y":4,"type":2,"text":"Текст","power":16},{"x":11,"y":4,"type":2,"text":"Текст","power":16},{"x":12,"y":4,"type":2,"text":"Текст","power":16},{"x":22,"y":4,"type":2,"text":"Текст","power":16},{"x":24,"y":-1,"type":2,"text":"Текст","power":16},{"x":25,"y":-1,"type":2,"text":"Текст","power":16},{"x":25,"y":0,"type":2,"text":"Текст","power":16},{"x":17,"y":2,"type":8,"text":"Нажми ПКМ в сторону серого блока чтобы за него схватиться","power":16},{"x":13,"y":6,"type":6,"text":"Текст","power":"10"},{"x":12,"y":5,"type":2,"text":"Текст","power":16},{"x":12,"y":6,"type":2,"text":"Текст","power":16},{"x":12,"y":7,"type":2,"text":"Текст","power":16},{"x":13,"y":7,"type":2,"text":"Текст","power":16},{"x":14,"y":7,"type":2,"text":"Текст","power":16},{"x":15,"y":7,"type":2,"text":"Текст","power":16},{"x":16,"y":7,"type":2,"text":"Текст","power":16},{"x":17,"y":7,"type":2,"text":"Текст","power":16},{"x":18,"y":7,"type":2,"text":"Текст","power":16},{"x":19,"y":7,"type":2,"text":"Текст","power":16},{"x":20,"y":7,"type":2,"text":"Текст","power":16},{"x":21,"y":7,"type":2,"text":"Текст","power":16},{"x":22,"y":7,"type":2,"text":"Текст","power":16},{"x":22,"y":6,"type":2,"text":"Текст","power":16},{"x":22,"y":5,"type":2,"text":"Текст","power":16},{"x":17,"y":0,"type":1,"text":"Текст","power":16},{"x":18,"y":0,"type":1,"text":"Текст","power":16},{"x":26,"y":0,"type":2,"text":"Текст","power":16},{"x":22,"y":3,"type":2,"text":"Текст","power":16},{"x":23,"y":3,"type":2,"text":"Текст","power":16},{"x":24,"y":3,"type":2,"text":"Текст","power":16},{"x":25,"y":3,"type":2,"text":"Текст","power":16},{"x":26,"y":3,"type":2,"text":"Текст","power":16},{"x":27,"y":3,"type":2,"text":"Текст","power":16},{"x":27,"y":0,"type":2,"text":"Текст","power":16},{"x":14,"y":6,"type":8,"text":"<<<","power":16},{"x":27,"y":1,"type":4,"text":"Текст","power":16},{"x":27,"y":2,"type":4,"text":"Текст","power":16},{"x":24,"y":2,"type":5,"text":"Текст","power":16},{"x":24,"y":1,"type":5,"text":"Текст","power":16},{"x":24,"y":0,"type":5,"text":"Текст","power":16},{"x":26,"y":1,"type":4,"text":"Текст","power":16},{"x":26,"y":2,"type":4,"text":"Текст","power":16},{"x":23,"y":0,"type":5,"text":"Текст","power":16},{"x":23,"y":1,"type":5,"text":"Текст","power":16},{"x":23,"y":2,"type":5,"text":"Текст","power":16},{"x":28,"y":0,"type":2,"text":"Текст","power":16},{"x":29,"y":0,"type":2,"text":"Текст","power":16},{"x":30,"y":0,"type":2,"text":"Текст","power":16},{"x":31,"y":0,"type":2,"text":"Текст","power":16},{"x":33,"y":2,"type":8,"text":"В этой комнате у тебя есть Двойной Прыжок","power":16},{"x":28,"y":4,"type":2,"text":"Текст","power":16},{"x":28,"y":3,"type":2,"text":"Текст","power":16},{"x":28,"y":5,"type":2,"text":"Текст","power":16},{"x":28,"y":6,"type":2,"text":"Текст","power":16},{"x":28,"y":7,"type":2,"text":"Текст","power":16},{"x":34,"y":6,"type":8,"text":"Красные Блоки Тебя убьют","power":16},{"x":29,"y":8,"type":3,"text":"Текст","power":16},{"x":30,"y":8,"type":3,"text":"Текст","power":16},{"x":31,"y":8,"type":3,"text":"Текст","power":16},{"x":32,"y":8,"type":3,"text":"Текст","power":16},{"x":33,"y":8,"type":3,"text":"Текст","power":16},{"x":34,"y":8,"type":3,"text":"Текст","power":16},{"x":35,"y":8,"type":3,"text":"Текст","power":16},{"x":36,"y":8,"type":3,"text":"Текст","power":16},{"x":37,"y":8,"type":3,"text":"Текст","power":16},{"x":28,"y":9,"type":2,"text":"Текст","power":16},{"x":28,"y":8,"type":2,"text":"Текст","power":16},{"x":29,"y":9,"type":2,"text":"Текст","power":16},{"x":30,"y":9,"type":2,"text":"Текст","power":16},{"x":31,"y":9,"type":2,"text":"Текст","power":16},{"x":32,"y":9,"type":2,"text":"Текст","power":16},{"x":33,"y":9,"type":2,"text":"Текст","power":16},{"x":34,"y":9,"type":2,"text":"Текст","power":16},{"x":35,"y":9,"type":2,"text":"Текст","power":16},{"x":36,"y":9,"type":2,"text":"Текст","power":16},{"x":37,"y":9,"type":2,"text":"Текст","power":16},{"x":38,"y":9,"type":2,"text":"Текст","power":16},{"x":39,"y":9,"type":2,"text":"Текст","power":16},{"x":40,"y":9,"type":2,"text":"Текст","power":16},{"x":41,"y":9,"type":2,"text":"Текст","power":16},{"x":41,"y":8,"type":2,"text":"Текст","power":16},{"x":41,"y":7,"type":2,"text":"Текст","power":16},{"x":41,"y":6,"type":2,"text":"Текст","power":16},{"x":42,"y":6,"type":2,"text":"Текст","power":16},{"x":43,"y":6,"type":2,"text":"Текст","power":16},{"x":44,"y":6,"type":2,"text":"Текст","power":16},{"x":38,"y":8,"type":3,"text":"Текст","power":16},{"x":39,"y":8,"type":3,"text":"Текст","power":16},{"x":40,"y":8,"type":3,"text":"Текст","power":16},{"x":32,"y":0,"type":2,"text":"Текст","power":16},{"x":33,"y":0,"type":2,"text":"Текст","power":16},{"x":34,"y":0,"type":2,"text":"Текст","power":16},{"x":35,"y":0,"type":2,"text":"Текст","power":16},{"x":36,"y":0,"type":2,"text":"Текст","power":16},{"x":37,"y":0,"type":2,"text":"Текст","power":16},{"x":38,"y":0,"type":2,"text":"Текст","power":16},{"x":39,"y":0,"type":2,"text":"Текст","power":16},{"x":40,"y":0,"type":2,"text":"Текст","power":16},{"x":41,"y":0,"type":2,"text":"Текст","power":16},{"x":41,"y":1,"type":2,"text":"Текст","power":16},{"x":41,"y":2,"type":2,"text":"Текст","power":16},{"x":41,"y":3,"type":2,"text":"Текст","power":16},{"x":42,"y":3,"type":2,"text":"Текст","power":16},{"x":43,"y":3,"type":2,"text":"Текст","power":16},{"x":44,"y":3,"type":2,"text":"Текст","power":16},{"x":41,"y":4,"type":4,"text":"Текст","power":16},{"x":41,"y":5,"type":4,"text":"Текст","power":16},{"x":42,"y":5,"type":4,"text":"Текст","power":16},{"x":42,"y":4,"type":4,"text":"Текст","power":16},{"x":44,"y":4,"type":5,"text":"Текст","power":16},{"x":44,"y":5,"type":5,"text":"Текст","power":16},{"x":45,"y":5,"type":5,"text":"Текст","power":16},{"x":45,"y":4,"type":5,"text":"Текст","power":16},{"x":46,"y":4,"type":5,"text":"Текст","power":16},{"x":46,"y":5,"type":5,"text":"Текст","power":16},{"x":45,"y":3,"type":2,"text":"Текст","power":16},{"x":46,"y":3,"type":2,"text":"Текст","power":16},{"x":45,"y":6,"type":2,"text":"Текст","power":16},{"x":46,"y":6,"type":2,"text":"Текст","power":16},{"x":28,"y":2,"type":9,"text":"Текст","power":16},{"x":43,"y":5,"type":9,"text":"Текст","power":16},{"x":47,"y":3,"type":2,"text":"Текст","power":16},{"x":48,"y":3,"type":2,"text":"Текст","power":16},{"x":49,"y":3,"type":2,"text":"Текст","power":16},{"x":50,"y":3,"type":2,"text":"Текст","power":16},{"x":51,"y":3,"type":2,"text":"Текст","power":16},{"x":52,"y":3,"type":2,"text":"Текст","power":16},{"x":53,"y":3,"type":2,"text":"Текст","power":16},{"x":54,"y":3,"type":2,"text":"Текст","power":16},{"x":55,"y":3,"type":2,"text":"Текст","power":16},{"x":56,"y":3,"type":2,"text":"Текст","power":16},{"x":57,"y":3,"type":2,"text":"Текст","power":16},{"x":58,"y":3,"type":2,"text":"Текст","power":16},{"x":59,"y":3,"type":2,"text":"Текст","power":16},{"x":60,"y":3,"type":2,"text":"Текст","power":16},{"x":60,"y":6,"type":2,"text":"Текст","power":16},{"x":59,"y":6,"type":2,"text":"Текст","power":16},{"x":58,"y":6,"type":2,"text":"Текст","power":16},{"x":57,"y":6,"type":2,"text":"Текст","power":16},{"x":56,"y":6,"type":2,"text":"Текст","power":16},{"x":55,"y":6,"type":2,"text":"Текст","power":16},{"x":54,"y":6,"type":2,"text":"Текст","power":16},{"x":53,"y":6,"type":2,"text":"Текст","power":16},{"x":52,"y":6,"type":2,"text":"Текст","power":16},{"x":49,"y":6,"type":2,"text":"Текст","power":16},{"x":48,"y":6,"type":2,"text":"Текст","power":16},{"x":47,"y":6,"type":2,"text":"Текст","power":16},{"x":50,"y":6,"type":2,"text":"Текст","power":16},{"x":51,"y":6,"type":2,"text":"Текст","power":16},{"x":50,"y":4,"type":8,"text":"Ты можешь создавать свои левела","power":16},{"x":56,"y":4,"type":8,"text":"Можно изменить скин справа сверзу","power":16},{"x":61,"y":3,"type":2,"text":"Текст","power":16},{"x":62,"y":3,"type":2,"text":"Текст","power":16},{"x":63,"y":3,"type":2,"text":"Текст","power":16},{"x":64,"y":3,"type":2,"text":"Текст","power":16},{"x":65,"y":3,"type":2,"text":"Текст","power":16},{"x":66,"y":3,"type":2,"text":"Текст","power":16},{"x":67,"y":3,"type":2,"text":"Текст","power":16},{"x":68,"y":3,"type":2,"text":"Текст","power":16},{"x":69,"y":3,"type":2,"text":"Текст","power":16},{"x":69,"y":6,"type":2,"text":"Текст","power":16},{"x":68,"y":6,"type":2,"text":"Текст","power":16},{"x":67,"y":6,"type":2,"text":"Текст","power":16},{"x":66,"y":6,"type":2,"text":"Текст","power":16},{"x":65,"y":6,"type":2,"text":"Текст","power":16},{"x":64,"y":6,"type":2,"text":"Текст","power":16},{"x":63,"y":6,"type":2,"text":"Текст","power":16},{"x":62,"y":6,"type":2,"text":"Текст","power":16},{"x":61,"y":6,"type":2,"text":"Текст","power":16},{"x":64,"y":4,"type":8,"text":"Нажми M чтобы выйти в меню","power":16},{"x":70,"y":3,"type":1,"text":"Текст","power":16},{"x":71,"y":3,"type":1,"text":"Текст","power":16},{"x":72,"y":2,"type":1,"text":"Текст","power":16},{"x":73,"y":2,"type":1,"text":"Текст","power":16},{"x":74,"y":2,"type":1,"text":"Текст","power":16},{"x":74,"y":1,"type":1,"text":"Текст","power":16},{"x":75,"y":1,"type":1,"text":"Текст","power":16},{"x":76,"y":1,"type":1,"text":"Текст","power":16},{"x":76,"y":0,"type":1,"text":"Текст","power":16},{"x":77,"y":0,"type":1,"text":"Текст","power":16},{"x":78,"y":0,"type":1,"text":"Текст","power":16},{"x":79,"y":0,"type":1,"text":"Текст","power":16},{"x":79,"y":-1,"type":1,"text":"Текст","power":16},{"x":80,"y":-1,"type":1,"text":"Текст","power":16},{"x":81,"y":-1,"type":1,"text":"Текст","power":16},{"x":82,"y":-1,"type":1,"text":"Текст","power":16},{"x":82,"y":-2,"type":1,"text":"Текст","power":16},{"x":83,"y":-2,"type":1,"text":"Текст","power":16},{"x":84,"y":-2,"type":1,"text":"Текст","power":16},{"x":84,"y":-3,"type":1,"text":"Текст","power":16},{"x":85,"y":-3,"type":1,"text":"Текст","power":16},{"x":86,"y":-3,"type":1,"text":"Текст","power":16},{"x":86,"y":-4,"type":1,"text":"Текст","power":16},{"x":87,"y":-4,"type":1,"text":"Текст","power":16},{"x":88,"y":-4,"type":1,"text":"Текст","power":16},{"x":89,"y":-4,"type":1,"text":"Текст","power":16},{"x":90,"y":-5,"type":1,"text":"Текст","power":16},{"x":91,"y":-5,"type":1,"text":"Текст","power":16},{"x":92,"y":-5,"type":1,"text":"Текст","power":16},{"x":93,"y":-5,"type":1,"text":"Текст","power":16},{"x":94,"y":-5,"type":1,"text":"Текст","power":16},{"x":95,"y":-5,"type":1,"text":"Текст","power":16},{"x":96,"y":-5,"type":1,"text":"Текст","power":16},{"x":97,"y":-5,"type":1,"text":"Текст","power":16},{"x":98,"y":-5,"type":1,"text":"Текст","power":16},{"x":99,"y":-5,"type":1,"text":"Текст","power":16},{"x":100,"y":-5,"type":1,"text":"Текст","power":16},{"x":101,"y":-5,"type":1,"text":"Текст","power":16},{"x":101,"y":-6,"type":1,"text":"Текст","power":16},{"x":102,"y":-6,"type":1,"text":"Текст","power":16},{"x":102,"y":-7,"type":1,"text":"Текст","power":16},{"x":103,"y":-7,"type":1,"text":"Текст","power":16},{"x":104,"y":-8,"type":1,"text":"Текст","power":16},{"x":105,"y":-8,"type":1,"text":"Текст","power":16},{"x":106,"y":-8,"type":1,"text":"Текст","power":16},{"x":107,"y":-9,"type":1,"text":"Текст","power":16},{"x":108,"y":-9,"type":1,"text":"Текст","power":16},{"x":70,"y":6,"type":2,"text":"Текст","power":16},{"x":71,"y":6,"type":2,"text":"Текст","power":16},{"x":72,"y":6,"type":2,"text":"Текст","power":16},{"x":73,"y":6,"type":2,"text":"Текст","power":16},{"x":74,"y":6,"type":2,"text":"Текст","power":16},{"x":76,"y":6,"type":2,"text":"Текст","power":16},{"x":77,"y":6,"type":2,"text":"Текст","power":16},{"x":75,"y":6,"type":2,"text":"Текст","power":16},{"x":78,"y":6,"type":2,"text":"Текст","power":16},{"x":79,"y":6,"type":2,"text":"Текст","power":16},{"x":80,"y":6,"type":3,"text":"Текст","power":16},{"x":81,"y":6,"type":3,"text":"Текст","power":16},{"x":82,"y":6,"type":3,"text":"Текст","power":16},{"x":83,"y":6,"type":3,"text":"Текст","power":16},{"x":84,"y":6,"type":3,"text":"Текст","power":16},{"x":85,"y":5,"type":3,"text":"Текст","power":16},{"x":86,"y":5,"type":3,"text":"Текст","power":16},{"x":87,"y":5,"type":3,"text":"Текст","power":16},{"x":87,"y":4,"type":3,"text":"Текст","power":16},{"x":88,"y":3,"type":3,"text":"Текст","power":16},{"x":89,"y":3,"type":3,"text":"Текст","power":16},{"x":89,"y":2,"type":3,"text":"Текст","power":16},{"x":90,"y":1,"type":3,"text":"Текст","power":16},{"x":91,"y":1,"type":3,"text":"Текст","power":16},{"x":92,"y":1,"type":3,"text":"Текст","power":16},{"x":93,"y":1,"type":3,"text":"Текст","power":16},{"x":94,"y":0,"type":3,"text":"Текст","power":16},{"x":95,"y":0,"type":3,"text":"Текст","power":16},{"x":96,"y":0,"type":3,"text":"Текст","power":16},{"x":97,"y":0,"type":3,"text":"Текст","power":16},{"x":98,"y":0,"type":3,"text":"Текст","power":16},{"x":99,"y":-1,"type":3,"text":"Текст","power":16},{"x":100,"y":-1,"type":3,"text":"Текст","power":16},{"x":101,"y":-1,"type":3,"text":"Текст","power":16},{"x":102,"y":-1,"type":3,"text":"Текст","power":16},{"x":103,"y":-1,"type":3,"text":"Текст","power":16},{"x":104,"y":-1,"type":3,"text":"Текст","power":16},{"x":105,"y":-1,"type":3,"text":"Текст","power":16},{"x":106,"y":-1,"type":3,"text":"Текст","power":16},{"x":107,"y":-1,"type":3,"text":"Текст","power":16},{"x":108,"y":-1,"type":3,"text":"Текст","power":16},{"x":109,"y":-2,"type":3,"text":"Текст","power":16},{"x":110,"y":-2,"type":3,"text":"Текст","power":16},{"x":111,"y":-2,"type":3,"text":"Текст","power":16},{"x":111,"y":-3,"type":3,"text":"Текст","power":16},{"x":111,"y":-4,"type":2,"text":"Текст","power":16},{"x":112,"y":-4,"type":2,"text":"Текст","power":16},{"x":113,"y":-4,"type":2,"text":"Текст","power":16},{"x":114,"y":-4,"type":2,"text":"Текст","power":16},{"x":115,"y":-4,"type":2,"text":"Текст","power":16},{"x":116,"y":-4,"type":2,"text":"Текст","power":16},{"x":117,"y":-4,"type":2,"text":"Текст","power":16},{"x":109,"y":-9,"type":1,"text":"Текст","power":16},{"x":110,"y":-9,"type":1,"text":"Текст","power":16},{"x":111,"y":-9,"type":1,"text":"Текст","power":16},{"x":112,"y":-9,"type":1,"text":"Текст","power":16},{"x":113,"y":-9,"type":2,"text":"Текст","power":16},{"x":114,"y":-9,"type":2,"text":"Текст","power":16},{"x":115,"y":-9,"type":2,"text":"Текст","power":16},{"x":116,"y":-9,"type":2,"text":"Текст","power":16},{"x":117,"y":-9,"type":2,"text":"Текст","power":16},{"x":118,"y":-9,"type":2,"text":"Текст","power":16},{"x":118,"y":-4,"type":2,"text":"Текст","power":16},{"x":119,"y":-4,"type":2,"text":"Текст","power":16},{"x":119,"y":-7,"type":2,"text":"Текст","power":16},{"x":119,"y":-8,"type":2,"text":"Текст","power":16},{"x":119,"y":-9,"type":2,"text":"Текст","power":16},{"x":69,"y":5,"type":9,"text":"Текст","power":16},{"x":120,"y":-7,"type":2,"text":"Текст","power":16},{"x":121,"y":-7,"type":2,"text":"Текст","power":16},{"x":122,"y":-7,"type":2,"text":"Текст","power":16},{"x":123,"y":-7,"type":2,"text":"Текст","power":16},{"x":120,"y":-4,"type":2,"text":"Текст","power":16},{"x":121,"y":-4,"type":2,"text":"Текст","power":16},{"x":122,"y":-4,"type":2,"text":"Текст","power":16},{"x":123,"y":-4,"type":2,"text":"Текст","power":16},{"x":123,"y":-9,"type":2,"text":"Текст","power":16},{"x":123,"y":-8,"type":2,"text":"Текст","power":16},{"x":123,"y":-10,"type":2,"text":"Текст","power":16},{"x":123,"y":-11,"type":2,"text":"Текст","power":16},{"x":123,"y":-12,"type":2,"text":"Текст","power":16},{"x":123,"y":-13,"type":2,"text":"Текст","power":16},{"x":123,"y":-14,"type":2,"text":"Текст","power":16},{"x":123,"y":-15,"type":2,"text":"Текст","power":16},{"x":123,"y":-16,"type":2,"text":"Текст","power":16},{"x":124,"y":-16,"type":2,"text":"Текст","power":16},{"x":124,"y":-17,"type":2,"text":"Текст","power":16},{"x":124,"y":-18,"type":2,"text":"Текст","power":16},{"x":124,"y":-19,"type":2,"text":"Текст","power":16},{"x":124,"y":-20,"type":2,"text":"Текст","power":16},{"x":124,"y":-21,"type":2,"text":"Текст","power":16},{"x":125,"y":-21,"type":2,"text":"Текст","power":16},{"x":125,"y":-22,"type":2,"text":"Текст","power":16},{"x":125,"y":-23,"type":2,"text":"Текст","power":16},{"x":125,"y":-24,"type":2,"text":"Текст","power":16},{"x":125,"y":-25,"type":2,"text":"Текст","power":16},{"x":126,"y":-26,"type":2,"text":"Текст","power":16},{"x":126,"y":-27,"type":2,"text":"Текст","power":16},{"x":126,"y":-28,"type":2,"text":"Текст","power":16},{"x":126,"y":-29,"type":2,"text":"Текст","power":16},{"x":126,"y":-30,"type":2,"text":"Текст","power":16},{"x":127,"y":-30,"type":2,"text":"Текст","power":16},{"x":128,"y":-30,"type":2,"text":"Текст","power":16},{"x":131,"y":-30,"type":2,"text":"Текст","power":16},{"x":132,"y":-30,"type":2,"text":"Текст","power":16},{"x":133,"y":-30,"type":2,"text":"Текст","power":16},{"x":134,"y":-30,"type":2,"text":"Текст","power":16},{"x":135,"y":-30,"type":2,"text":"Текст","power":16},{"x":136,"y":-30,"type":2,"text":"Текст","power":16},{"x":137,"y":-30,"type":2,"text":"Текст","power":16},{"x":138,"y":-30,"type":2,"text":"Текст","power":16},{"x":139,"y":-30,"type":2,"text":"Текст","power":16},{"x":139,"y":-26,"type":2,"text":"Текст","power":16},{"x":138,"y":-26,"type":2,"text":"Текст","power":16},{"x":137,"y":-26,"type":2,"text":"Текст","power":16},{"x":136,"y":-26,"type":2,"text":"Текст","power":16},{"x":135,"y":-26,"type":2,"text":"Текст","power":16},{"x":134,"y":-26,"type":2,"text":"Текст","power":16},{"x":133,"y":-26,"type":2,"text":"Текст","power":16},{"x":132,"y":-26,"type":2,"text":"Текст","power":16},{"x":131,"y":-26,"type":2,"text":"Текст","power":16},{"x":130,"y":-26,"type":2,"text":"Текст","power":16},{"x":130,"y":-25,"type":2,"text":"Текст","power":16},{"x":130,"y":-24,"type":2,"text":"Текст","power":16},{"x":130,"y":-23,"type":2,"text":"Текст","power":16},{"x":130,"y":-22,"type":2,"text":"Текст","power":16},{"x":130,"y":-21,"type":2,"text":"Текст","power":16},{"x":130,"y":-20,"type":2,"text":"Текст","power":16},{"x":130,"y":-19,"type":2,"text":"Текст","power":16},{"x":130,"y":-18,"type":2,"text":"Текст","power":16},{"x":130,"y":-17,"type":2,"text":"Текст","power":16},{"x":130,"y":-16,"type":2,"text":"Текст","power":16},{"x":130,"y":-15,"type":2,"text":"Текст","power":16},{"x":130,"y":-14,"type":2,"text":"Текст","power":16},{"x":130,"y":-13,"type":2,"text":"Текст","power":16},{"x":130,"y":-12,"type":2,"text":"Текст","power":16},{"x":130,"y":-11,"type":2,"text":"Текст","power":16},{"x":130,"y":-10,"type":2,"text":"Текст","power":16},{"x":130,"y":-9,"type":2,"text":"Текст","power":16},{"x":130,"y":-8,"type":2,"text":"Текст","power":16},{"x":130,"y":-7,"type":2,"text":"Текст","power":16},{"x":130,"y":-6,"type":2,"text":"Текст","power":16},{"x":130,"y":-5,"type":2,"text":"Текст","power":16},{"x":130,"y":-4,"type":2,"text":"Текст","power":16},{"x":129,"y":-4,"type":2,"text":"Текст","power":16},{"x":128,"y":-4,"type":2,"text":"Текст","power":16},{"x":127,"y":-4,"type":2,"text":"Текст","power":16},{"x":126,"y":-4,"type":2,"text":"Текст","power":16},{"x":125,"y":-4,"type":2,"text":"Текст","power":16},{"x":124,"y":-4,"type":2,"text":"Текст","power":16},{"x":129,"y":-5,"type":1,"text":"Текст","power":16},{"x":129,"y":-6,"type":1,"text":"Текст","power":16},{"x":129,"y":-7,"type":1,"text":"Текст","power":16},{"x":129,"y":-8,"type":1,"text":"Текст","power":16},{"x":129,"y":-9,"type":1,"text":"Текст","power":16},{"x":129,"y":-10,"type":1,"text":"Текст","power":16},{"x":129,"y":-11,"type":1,"text":"Текст","power":16},{"x":129,"y":-12,"type":1,"text":"Текст","power":16},{"x":129,"y":-13,"type":1,"text":"Текст","power":16},{"x":129,"y":-14,"type":1,"text":"Текст","power":16},{"x":129,"y":-15,"type":1,"text":"Текст","power":16},{"x":129,"y":-16,"type":1,"text":"Текст","power":16},{"x":129,"y":-17,"type":1,"text":"Текст","power":16},{"x":129,"y":-18,"type":1,"text":"Текст","power":16},{"x":129,"y":-19,"type":1,"text":"Текст","power":16},{"x":129,"y":-20,"type":1,"text":"Текст","power":16},{"x":129,"y":-21,"type":1,"text":"Текст","power":16},{"x":129,"y":-22,"type":1,"text":"Текст","power":16},{"x":129,"y":-23,"type":1,"text":"Текст","power":16},{"x":129,"y":-24,"type":1,"text":"Текст","power":16},{"x":129,"y":-25,"type":1,"text":"Текст","power":16},{"x":129,"y":-26,"type":1,"text":"Текст","power":16},{"x":121,"y":-5,"type":9,"text":"Текст","power":16},{"x":140,"y":-30,"type":2,"text":"Текст","power":16},{"x":144,"y":-28,"type":2,"text":"Текст","power":16},{"x":145,"y":-28,"type":2,"text":"Текст","power":16},{"x":146,"y":-28,"type":2,"text":"Текст","power":16},{"x":147,"y":-27,"type":2,"text":"Текст","power":16},{"x":148,"y":-27,"type":2,"text":"Текст","power":16},{"x":148,"y":-26,"type":2,"text":"Текст","power":16},{"x":149,"y":-26,"type":2,"text":"Текст","power":16},{"x":149,"y":-25,"type":2,"text":"Текст","power":16},{"x":149,"y":-24,"type":2,"text":"Текст","power":16},{"x":150,"y":-24,"type":2,"text":"Текст","power":16},{"x":150,"y":-23,"type":2,"text":"Текст","power":16},{"x":150,"y":-22,"type":2,"text":"Текст","power":16},{"x":150,"y":-21,"type":2,"text":"Текст","power":16},{"x":150,"y":-20,"type":2,"text":"Текст","power":16},{"x":150,"y":-19,"type":2,"text":"Текст","power":16},{"x":150,"y":-18,"type":2,"text":"Текст","power":16},{"x":150,"y":-17,"type":2,"text":"Текст","power":16},{"x":150,"y":-16,"type":2,"text":"Текст","power":16},{"x":140,"y":-26,"type":2,"text":"Текст","power":16},{"x":140,"y":-25,"type":2,"text":"Текст","power":16},{"x":141,"y":-25,"type":2,"text":"Текст","power":16},{"x":141,"y":-24,"type":2,"text":"Текст","power":16},{"x":141,"y":-23,"type":2,"text":"Текст","power":16},{"x":142,"y":-23,"type":2,"text":"Текст","power":16},{"x":142,"y":-22,"type":2,"text":"Текст","power":16},{"x":142,"y":-21,"type":2,"text":"Текст","power":16},{"x":143,"y":-21,"type":2,"text":"Текст","power":16},{"x":143,"y":-20,"type":2,"text":"Текст","power":16},{"x":144,"y":-19,"type":2,"text":"Текст","power":16},{"x":144,"y":-18,"type":2,"text":"Текст","power":16},{"x":144,"y":-17,"type":2,"text":"Текст","power":16},{"x":144,"y":-16,"type":2,"text":"Текст","power":16},{"x":144,"y":-15,"type":2,"text":"Текст","power":16},{"x":144,"y":-14,"type":2,"text":"Текст","power":16},{"x":144,"y":-13,"type":2,"text":"Текст","power":16},{"x":150,"y":-15,"type":2,"text":"Текст","power":16},{"x":150,"y":-14,"type":2,"text":"Текст","power":16},{"x":150,"y":-13,"type":2,"text":"Текст","power":16},{"x":150,"y":-12,"type":2,"text":"Текст","power":16},{"x":150,"y":-11,"type":2,"text":"Текст","power":16},{"x":150,"y":-10,"type":2,"text":"Текст","power":16},{"x":150,"y":-9,"type":2,"text":"Текст","power":16},{"x":150,"y":-8,"type":2,"text":"Текст","power":16},{"x":150,"y":-7,"type":2,"text":"Текст","power":16},{"x":150,"y":-6,"type":2,"text":"Текст","power":16},{"x":150,"y":-5,"type":2,"text":"Текст","power":16},{"x":150,"y":-4,"type":2,"text":"Текст","power":16},{"x":144,"y":-12,"type":2,"text":"Текст","power":16},{"x":144,"y":-11,"type":2,"text":"Текст","power":16},{"x":144,"y":-10,"type":2,"text":"Текст","power":16},{"x":144,"y":-9,"type":2,"text":"Текст","power":16},{"x":144,"y":-8,"type":2,"text":"Текст","power":16},{"x":144,"y":-7,"type":2,"text":"Текст","power":16},{"x":144,"y":-6,"type":2,"text":"Текст","power":16},{"x":144,"y":-5,"type":2,"text":"Текст","power":16},{"x":144,"y":-4,"type":2,"text":"Текст","power":16},{"x":144,"y":-3,"type":2,"text":"Текст","power":16},{"x":144,"y":-2,"type":2,"text":"Текст","power":16},{"x":150,"y":-3,"type":2,"text":"Текст","power":16},{"x":150,"y":-2,"type":2,"text":"Текст","power":16},{"x":150,"y":-1,"type":2,"text":"Текст","power":16},{"x":144,"y":-1,"type":2,"text":"Текст","power":16},{"x":144,"y":0,"type":2,"text":"Текст","power":16},{"x":144,"y":1,"type":2,"text":"Текст","power":16},{"x":144,"y":2,"type":2,"text":"Текст","power":16},{"x":144,"y":3,"type":2,"text":"Текст","power":16},{"x":144,"y":4,"type":2,"text":"Текст","power":16},{"x":144,"y":5,"type":2,"text":"Текст","power":16},{"x":145,"y":5,"type":2,"text":"Текст","power":16},{"x":146,"y":5,"type":2,"text":"Текст","power":16},{"x":147,"y":5,"type":2,"text":"Текст","power":16},{"x":148,"y":5,"type":2,"text":"Текст","power":16},{"x":149,"y":5,"type":2,"text":"Текст","power":16},{"x":150,"y":5,"type":2,"text":"Текст","power":16},{"x":150,"y":0,"type":2,"text":"Текст","power":16},{"x":150,"y":1,"type":2,"text":"Текст","power":16},{"x":150,"y":2,"type":2,"text":"Текст","power":16},{"x":151,"y":2,"type":2,"text":"Текст","power":16},{"x":152,"y":2,"type":2,"text":"Текст","power":16},{"x":153,"y":2,"type":2,"text":"Текст","power":16},{"x":154,"y":2,"type":2,"text":"Текст","power":16},{"x":154,"y":5,"type":2,"text":"Текст","power":16},{"x":153,"y":5,"type":2,"text":"Текст","power":16},{"x":152,"y":5,"type":2,"text":"Текст","power":16},{"x":151,"y":5,"type":2,"text":"Текст","power":16},{"x":145,"y":-15,"type":3,"text":"Текст","power":16},{"x":145,"y":-16,"type":3,"text":"Текст","power":16},{"x":149,"y":-10,"type":3,"text":"Текст","power":16},{"x":146,"y":-4,"type":3,"text":"Текст","power":16},{"x":146,"y":-3,"type":3,"text":"Текст","power":16},{"x":146,"y":3,"type":3,"text":"Текст","power":16},{"x":145,"y":3,"type":3,"text":"Текст","power":16},{"x":145,"y":4,"type":3,"text":"Текст","power":16},{"x":146,"y":4,"type":3,"text":"Текст","power":16},{"x":140,"y":-27,"type":9,"text":"Текст","power":16},{"x":140,"y":-29,"type":2,"text":"Текст","power":16},{"x":141,"y":-29,"type":2,"text":"Текст","power":16},{"x":143,"y":-28,"type":2,"text":"Текст","power":16},{"x":119,"y":-5,"type":5,"text":"Текст","power":16},{"x":120,"y":-5,"type":5,"text":"Текст","power":16},{"x":119,"y":-6,"type":5,"text":"Текст","power":16},{"x":120,"y":-6,"type":5,"text":"Текст","power":16},{"x":69,"y":4,"type":5,"text":"Текст","power":16},{"x":68,"y":4,"type":5,"text":"Текст","power":16},{"x":68,"y":5,"type":5,"text":"Текст","power":16},{"x":67,"y":4,"type":5,"text":"Текст","power":16},{"x":67,"y":5,"type":5,"text":"Текст","power":16},{"x":139,"y":-28,"type":5,"text":"Текст","power":16,"color":"#e74c3c"},{"x":139,"y":-29,"type":5,"text":"Текст","power":16},{"x":140,"y":-28,"type":5,"text":"Текст","power":16},{"x":139,"y":-27,"type":5,"text":"Текст","power":16},{"x":149,"y":-16,"type":1,"text":"Текст","power":16},{"x":145,"y":-8,"type":1,"text":"Текст","power":16},{"x":149,"y":-1,"type":1,"text":"Текст","power":16},{"x":145,"y":1,"type":1,"text":"Текст","power":16},{"x":152,"y":4,"type":8,"text":"ХАРОШШШ","power":16},{"x":142,"y":-29,"type":2,"text":"Текст","power":16},{"x":146,"y":-16,"type":3,"text":"Текст","power":16},{"x":147,"y":-4,"type":3,"text":"Текст","power":16},{"x":155,"y":2,"type":2,"text":"Текст","power":16},{"x":156,"y":2,"type":2,"text":"Текст","power":16},{"x":157,"y":2,"type":2,"text":"Текст","power":16},{"x":158,"y":2,"type":2,"text":"Текст","power":16},{"x":159,"y":2,"type":2,"text":"Текст","power":16},{"x":160,"y":2,"type":2,"text":"Текст","power":16},{"x":161,"y":2,"type":2,"text":"Текст","power":16},{"x":162,"y":2,"type":2,"text":"Текст","power":16},{"x":163,"y":2,"type":2,"text":"Текст","power":16},{"x":163,"y":3,"type":2,"text":"Текст","power":16},{"x":163,"y":4,"type":2,"text":"Текст","power":16},{"x":163,"y":5,"type":2,"text":"Текст","power":16},{"x":163,"y":6,"type":2,"text":"Текст","power":16},{"x":163,"y":7,"type":2,"text":"Текст","power":16},{"x":163,"y":9,"type":2,"text":"Текст","power":16},{"x":163,"y":10,"type":2,"text":"Текст","power":16},{"x":163,"y":8,"type":2,"text":"Текст","power":16},{"x":163,"y":11,"type":2,"text":"Текст","power":16},{"x":163,"y":12,"type":2,"text":"Текст","power":16},{"x":163,"y":13,"type":2,"text":"Текст","power":16},{"x":163,"y":14,"type":2,"text":"Текст","power":16},{"x":163,"y":15,"type":2,"text":"Текст","power":16},{"x":163,"y":16,"type":2,"text":"Текст","power":16},{"x":163,"y":17,"type":2,"text":"Текст","power":16},{"x":163,"y":18,"type":2,"text":"Текст","power":16},{"x":163,"y":19,"type":2,"text":"Текст","power":16},{"x":163,"y":20,"type":2,"text":"Текст","power":16},{"x":163,"y":21,"type":2,"text":"Текст","power":16},{"x":163,"y":22,"type":2,"text":"Текст","power":16},{"x":163,"y":23,"type":2,"text":"Текст","power":16},{"x":163,"y":24,"type":2,"text":"Текст","power":16},{"x":163,"y":25,"type":2,"text":"Текст","power":16},{"x":163,"y":26,"type":2,"text":"Текст","power":16},{"x":163,"y":27,"type":2,"text":"Текст","power":16},{"x":163,"y":28,"type":2,"text":"Текст","power":16},{"x":163,"y":29,"type":2,"text":"Текст","power":16},{"x":163,"y":30,"type":2,"text":"Текст","power":16},{"x":163,"y":31,"type":2,"text":"Текст","power":16},{"x":163,"y":32,"type":2,"text":"Текст","power":16},{"x":163,"y":33,"type":2,"text":"Текст","power":16},{"x":163,"y":34,"type":2,"text":"Текст","power":16},{"x":163,"y":35,"type":2,"text":"Текст","power":16},{"x":163,"y":36,"type":2,"text":"Текст","power":16},{"x":163,"y":37,"type":2,"text":"Текст","power":16},{"x":163,"y":38,"type":2,"text":"Текст","power":16},{"x":163,"y":41,"type":2,"text":"Текст","power":16},{"x":162,"y":41,"type":2,"text":"Текст","power":16},{"x":161,"y":41,"type":2,"text":"Текст","power":16},{"x":160,"y":41,"type":2,"text":"Текст","power":16},{"x":159,"y":41,"type":2,"text":"Текст","power":16},{"x":158,"y":41,"type":2,"text":"Текст","power":16},{"x":157,"y":41,"type":2,"text":"Текст","power":16},{"x":156,"y":41,"type":2,"text":"Текст","power":16},{"x":154,"y":6,"type":2,"text":"Текст","power":16},{"x":154,"y":7,"type":2,"text":"Текст","power":16},{"x":154,"y":8,"type":2,"text":"Текст","power":16},{"x":154,"y":9,"type":2,"text":"Текст","power":16},{"x":154,"y":10,"type":2,"text":"Текст","power":16},{"x":154,"y":11,"type":2,"text":"Текст","power":16},{"x":154,"y":12,"type":2,"text":"Текст","power":16},{"x":154,"y":13,"type":2,"text":"Текст","power":16},{"x":154,"y":14,"type":2,"text":"Текст","power":16},{"x":154,"y":15,"type":2,"text":"Текст","power":16},{"x":154,"y":16,"type":2,"text":"Текст","power":16},{"x":154,"y":17,"type":2,"text":"Текст","power":16},{"x":154,"y":18,"type":2,"text":"Текст","power":16},{"x":154,"y":19,"type":2,"text":"Текст","power":16},{"x":154,"y":20,"type":2,"text":"Текст","power":16},{"x":154,"y":21,"type":2,"text":"Текст","power":16},{"x":154,"y":22,"type":2,"text":"Текст","power":16},{"x":154,"y":23,"type":2,"text":"Текст","power":16},{"x":154,"y":24,"type":2,"text":"Текст","power":16},{"x":154,"y":25,"type":2,"text":"Текст","power":16},{"x":154,"y":26,"type":2,"text":"Текст","power":16},{"x":154,"y":27,"type":2,"text":"Текст","power":16},{"x":154,"y":28,"type":2,"text":"Текст","power":16},{"x":154,"y":29,"type":2,"text":"Текст","power":16},{"x":154,"y":30,"type":2,"text":"Текст","power":16},{"x":154,"y":31,"type":2,"text":"Текст","power":16},{"x":154,"y":32,"type":2,"text":"Текст","power":16},{"x":154,"y":33,"type":2,"text":"Текст","power":16},{"x":154,"y":34,"type":2,"text":"Текст","power":16},{"x":154,"y":35,"type":2,"text":"Текст","power":16},{"x":154,"y":36,"type":2,"text":"Текст","power":16},{"x":154,"y":37,"type":2,"text":"Текст","power":16},{"x":154,"y":38,"type":2,"text":"Текст","power":16},{"x":154,"y":39,"type":2,"text":"Текст","power":16},{"x":154,"y":40,"type":2,"text":"Текст","power":16},{"x":154,"y":41,"type":2,"text":"Текст","power":16},{"x":155,"y":41,"type":2,"text":"Текст","power":16},{"x":157,"y":8,"type":3,"text":"Текст","power":16},{"x":156,"y":16,"type":3,"text":"Текст","power":16},{"x":162,"y":17,"type":3,"text":"Текст","power":16},{"x":162,"y":23,"type":3,"text":"Текст","power":16},{"x":159,"y":28,"type":3,"text":"Текст","power":16},{"x":161,"y":36,"type":3,"text":"Текст","power":16},{"x":156,"y":39,"type":3,"text":"Текст","power":16},{"x":147,"y":4,"type":9,"text":"Текст","power":16},{"x":148,"y":4,"type":9,"text":"Текст","power":16},{"x":149,"y":4,"type":9,"text":"Текст","power":16},{"x":158,"y":40,"type":9,"text":"Текст","power":16},{"x":159,"y":40,"type":9,"text":"Текст","power":16},{"x":160,"y":40,"type":9,"text":"Текст","power":16},{"x":161,"y":40,"type":9,"text":"Текст","power":16},{"x":162,"y":40,"type":9,"text":"Текст","power":16},{"x":163,"y":40,"type":9,"text":"Текст","power":16},{"x":150,"y":4,"type":9,"text":"Текст","power":16},{"x":154,"y":4,"type":9,"text":"Текст","power":16},{"x":162,"y":39,"type":8,"text":"МЕГАХАРОШШШ","power":16},{"x":164,"y":38,"type":2,"text":"Текст","power":16},{"x":165,"y":38,"type":2,"text":"Текст","power":16},{"x":166,"y":38,"type":2,"text":"Текст","power":16},{"x":167,"y":38,"type":2,"text":"Текст","power":16},{"x":164,"y":41,"type":2,"text":"Текст","power":16},{"x":165,"y":41,"type":2,"text":"Текст","power":16},{"x":166,"y":41,"type":2,"text":"Текст","power":16},{"x":167,"y":41,"type":2,"text":"Текст","power":16},{"x":168,"y":41,"type":2,"text":"Текст","power":16},{"x":169,"y":41,"type":2,"text":"Текст","power":16},{"x":170,"y":41,"type":2,"text":"Текст","power":16},{"x":171,"y":41,"type":2,"text":"Текст","power":16},{"x":172,"y":41,"type":2,"text":"Текст","power":16},{"x":173,"y":41,"type":2,"text":"Текст","power":16},{"x":174,"y":41,"type":2,"text":"Текст","power":16},{"x":175,"y":41,"type":2,"text":"Текст","power":16},{"x":168,"y":38,"type":2,"text":"Текст","power":16},{"x":169,"y":38,"type":2,"text":"Текст","power":16},{"x":169,"y":37,"type":2,"text":"Текст","power":16},{"x":169,"y":36,"type":2,"text":"Текст","power":16},{"x":169,"y":35,"type":2,"text":"Текст","power":16},{"x":169,"y":34,"type":2,"text":"Текст","power":16},{"x":169,"y":33,"type":2,"text":"Текст","power":16},{"x":169,"y":32,"type":2,"text":"Текст","power":16},{"x":169,"y":31,"type":2,"text":"Текст","power":16},{"x":169,"y":30,"type":2,"text":"Текст","power":16},{"x":169,"y":29,"type":2,"text":"Текст","power":16},{"x":169,"y":28,"type":2,"text":"Текст","power":16},{"x":169,"y":27,"type":2,"text":"Текст","power":16},{"x":169,"y":26,"type":2,"text":"Текст","power":16},{"x":169,"y":25,"type":2,"text":"Текст","power":16},{"x":169,"y":24,"type":2,"text":"Текст","power":16},{"x":169,"y":23,"type":2,"text":"Текст","power":16},{"x":169,"y":22,"type":2,"text":"Текст","power":16},{"x":169,"y":21,"type":2,"text":"Текст","power":16},{"x":169,"y":20,"type":2,"text":"Текст","power":16},{"x":170,"y":20,"type":2,"text":"Текст","power":16},{"x":170,"y":19,"type":2,"text":"Текст","power":16},{"x":170,"y":18,"type":2,"text":"Текст","power":16},{"x":170,"y":17,"type":2,"text":"Текст","power":16},{"x":170,"y":16,"type":2,"text":"Текст","power":16},{"x":170,"y":15,"type":2,"text":"Текст","power":16},{"x":171,"y":15,"type":2,"text":"Текст","power":16},{"x":171,"y":14,"type":2,"text":"Текст","power":16},{"x":171,"y":13,"type":2,"text":"Текст","power":16},{"x":171,"y":12,"type":2,"text":"Текст","power":16},{"x":171,"y":11,"type":2,"text":"Текст","power":16},{"x":171,"y":10,"type":2,"text":"Текст","power":16},{"x":171,"y":9,"type":2,"text":"Текст","power":16},{"x":171,"y":8,"type":2,"text":"Текст","power":16},{"x":171,"y":7,"type":2,"text":"Текст","power":16},{"x":171,"y":6,"type":2,"text":"Текст","power":16},{"x":171,"y":5,"type":2,"text":"Текст","power":16},{"x":171,"y":4,"type":2,"text":"Текст","power":16},{"x":171,"y":3,"type":2,"text":"Текст","power":16},{"x":170,"y":38,"type":3,"text":"Текст","power":16},{"x":170,"y":37,"type":3,"text":"Текст","power":16},{"x":170,"y":36,"type":3,"text":"Текст","power":16},{"x":170,"y":35,"type":3,"text":"Текст","power":16},{"x":170,"y":34,"type":3,"text":"Текст","power":16},{"x":170,"y":33,"type":3,"text":"Текст","power":16},{"x":170,"y":32,"type":3,"text":"Текст","power":16},{"x":170,"y":31,"type":3,"text":"Текст","power":16},{"x":170,"y":30,"type":3,"text":"Текст","power":16},{"x":170,"y":29,"type":3,"text":"Текст","power":16},{"x":170,"y":28,"type":3,"text":"Текст","power":16},{"x":170,"y":27,"type":3,"text":"Текст","power":16},{"x":170,"y":26,"type":3,"text":"Текст","power":16},{"x":170,"y":25,"type":3,"text":"Текст","power":16},{"x":170,"y":24,"type":3,"text":"Текст","power":16},{"x":170,"y":23,"type":3,"text":"Текст","power":16},{"x":170,"y":22,"type":3,"text":"Текст","power":16},{"x":170,"y":21,"type":3,"text":"Текст","power":16},{"x":171,"y":21,"type":3,"text":"Текст","power":16},{"x":171,"y":20,"type":3,"text":"Текст","power":16},{"x":171,"y":19,"type":3,"text":"Текст","power":16},{"x":171,"y":18,"type":3,"text":"Текст","power":16},{"x":171,"y":17,"type":3,"text":"Текст","power":16},{"x":171,"y":16,"type":3,"text":"Текст","power":16},{"x":172,"y":16,"type":3,"text":"Текст","power":16},{"x":172,"y":15,"type":3,"text":"Текст","power":16},{"x":172,"y":14,"type":3,"text":"Текст","power":16},{"x":172,"y":13,"type":3,"text":"Текст","power":16},{"x":172,"y":12,"type":3,"text":"Текст","power":16},{"x":172,"y":11,"type":3,"text":"Текст","power":16},{"x":172,"y":10,"type":3,"text":"Текст","power":16},{"x":172,"y":9,"type":3,"text":"Текст","power":16},{"x":172,"y":8,"type":3,"text":"Текст","power":16},{"x":172,"y":7,"type":3,"text":"Текст","power":16},{"x":172,"y":6,"type":3,"text":"Текст","power":16},{"x":172,"y":5,"type":3,"text":"Текст","power":16},{"x":172,"y":4,"type":3,"text":"Текст","power":16},{"x":172,"y":3,"type":3,"text":"Текст","power":16},{"x":171,"y":2,"type":2,"text":"Текст","power":16},{"x":171,"y":1,"type":2,"text":"Текст","power":16},{"x":175,"y":40,"type":1,"text":"Текст","power":16},{"x":175,"y":39,"type":1,"text":"Текст","power":16},{"x":175,"y":38,"type":1,"text":"Текст","power":16},{"x":175,"y":37,"type":1,"text":"Текст","power":16},{"x":175,"y":36,"type":1,"text":"Текст","power":16},{"x":175,"y":35,"type":1,"text":"Текст","power":16},{"x":175,"y":34,"type":1,"text":"Текст","power":16},{"x":175,"y":33,"type":1,"text":"Текст","power":16},{"x":175,"y":32,"type":1,"text":"Текст","power":16},{"x":175,"y":31,"type":1,"text":"Текст","power":16},{"x":175,"y":30,"type":1,"text":"Текст","power":16},{"x":175,"y":29,"type":1,"text":"Текст","power":16},{"x":175,"y":28,"type":1,"text":"Текст","power":16},{"x":175,"y":27,"type":1,"text":"Текст","power":16},{"x":175,"y":26,"type":1,"text":"Текст","power":16},{"x":175,"y":25,"type":1,"text":"Текст","power":16},{"x":175,"y":24,"type":1,"text":"Текст","power":16},{"x":175,"y":23,"type":1,"text":"Текст","power":16},{"x":175,"y":22,"type":1,"text":"Текст","power":16},{"x":175,"y":21,"type":1,"text":"Текст","power":16},{"x":175,"y":20,"type":1,"text":"Текст","power":16},{"x":175,"y":19,"type":1,"text":"Текст","power":16},{"x":175,"y":18,"type":1,"text":"Текст","power":16},{"x":175,"y":17,"type":1,"text":"Текст","power":16},{"x":175,"y":16,"type":1,"text":"Текст","power":16},{"x":175,"y":15,"type":1,"text":"Текст","power":16},{"x":175,"y":14,"type":1,"text":"Текст","power":16},{"x":175,"y":13,"type":1,"text":"Текст","power":16},{"x":175,"y":12,"type":1,"text":"Текст","power":16},{"x":175,"y":11,"type":1,"text":"Текст","power":16},{"x":175,"y":10,"type":1,"text":"Текст","power":16},{"x":175,"y":9,"type":1,"text":"Текст","power":16},{"x":175,"y":8,"type":1,"text":"Текст","power":16},{"x":175,"y":7,"type":1,"text":"Текст","power":16},{"x":175,"y":6,"type":1,"text":"Текст","power":16},{"x":175,"y":5,"type":1,"text":"Текст","power":16},{"x":175,"y":4,"type":1,"text":"Текст","power":16},{"x":171,"y":0,"type":2,"text":"Текст","power":16},{"x":171,"y":-1,"type":2,"text":"Текст","power":16},{"x":171,"y":-2,"type":2,"text":"Текст","power":16},{"x":171,"y":-3,"type":2,"text":"Текст","power":16},{"x":171,"y":-4,"type":2,"text":"Текст","power":16},{"x":171,"y":-5,"type":2,"text":"Текст","power":16},{"x":171,"y":-6,"type":2,"text":"Текст","power":16},{"x":171,"y":-7,"type":2,"text":"Текст","power":16},{"x":171,"y":-8,"type":2,"text":"Текст","power":16},{"x":171,"y":-13,"type":2,"text":"Текст","power":16},{"x":171,"y":-12,"type":2,"text":"Текст","power":16},{"x":171,"y":-11,"type":2,"text":"Текст","power":16},{"x":171,"y":-10,"type":2,"text":"Текст","power":16},{"x":171,"y":-9,"type":2,"text":"Текст","power":16},{"x":171,"y":-14,"type":2,"text":"Текст","power":16},{"x":171,"y":-15,"type":2,"text":"Текст","power":16},{"x":171,"y":-16,"type":2,"text":"Текст","power":16},{"x":171,"y":-17,"type":2,"text":"Текст","power":16},{"x":171,"y":-20,"type":2,"text":"Текст","power":16},{"x":171,"y":-19,"type":2,"text":"Текст","power":16},{"x":171,"y":-18,"type":2,"text":"Текст","power":16},{"x":171,"y":-21,"type":2,"text":"Текст","power":16},{"x":169,"y":40,"type":9,"text":"Текст","power":16},{"x":170,"y":-28,"type":2,"text":"Текст","power":16},{"x":169,"y":-28,"type":2,"text":"Текст","power":16},{"x":168,"y":-28,"type":2,"text":"Текст","power":16},{"x":167,"y":-28,"type":2,"text":"Текст","power":16},{"x":166,"y":-28,"type":2,"text":"Текст","power":16},{"x":165,"y":-28,"type":2,"text":"Текст","power":16},{"x":164,"y":-28,"type":2,"text":"Текст","power":16},{"x":163,"y":-28,"type":2,"text":"Текст","power":16},{"x":162,"y":-28,"type":2,"text":"Текст","power":16},{"x":161,"y":-28,"type":2,"text":"Текст","power":16},{"x":160,"y":-28,"type":2,"text":"Текст","power":16},{"x":159,"y":-28,"type":2,"text":"Текст","power":16},{"x":158,"y":-28,"type":2,"text":"Текст","power":16},{"x":157,"y":-28,"type":2,"text":"Текст","power":16},{"x":156,"y":-28,"type":2,"text":"Текст","power":16},{"x":155,"y":-28,"type":2,"text":"Текст","power":16},{"x":154,"y":-28,"type":2,"text":"Текст","power":16},{"x":154,"y":-29,"type":2,"text":"Текст","power":16},{"x":153,"y":-29,"type":2,"text":"Текст","power":16},{"x":152,"y":-29,"type":2,"text":"Текст","power":16},{"x":151,"y":-29,"type":2,"text":"Текст","power":16},{"x":150,"y":-30,"type":2,"text":"Текст","power":16},{"x":149,"y":-30,"type":2,"text":"Текст","power":16},{"x":148,"y":-30,"type":2,"text":"Текст","power":16},{"x":147,"y":-30,"type":2,"text":"Текст","power":16},{"x":147,"y":-31,"type":2,"text":"Текст","power":16},{"x":146,"y":-31,"type":2,"text":"Текст","power":16},{"x":145,"y":-31,"type":2,"text":"Текст","power":16},{"x":144,"y":-31,"type":2,"text":"Текст","power":16},{"x":143,"y":-31,"type":2,"text":"Текст","power":16},{"x":142,"y":-31,"type":2,"text":"Текст","power":16},{"x":141,"y":-31,"type":2,"text":"Текст","power":16},{"x":140,"y":-31,"type":2,"text":"Текст","power":16},{"x":139,"y":-31,"type":2,"text":"Текст","power":16},{"x":138,"y":-31,"type":2,"text":"Текст","power":16},{"x":137,"y":-31,"type":2,"text":"Текст","power":16},{"x":136,"y":-31,"type":2,"text":"Текст","power":16},{"x":135,"y":-31,"type":2,"text":"Текст","power":16},{"x":134,"y":-31,"type":2,"text":"Текст","power":16},{"x":133,"y":-31,"type":2,"text":"Текст","power":16},{"x":132,"y":-31,"type":2,"text":"Текст","power":16},{"x":128,"y":-31,"type":2,"text":"Текст","power":16},{"x":128,"y":-32,"type":2,"text":"Текст","power":16},{"x":128,"y":-33,"type":2,"text":"Текст","power":16},{"x":128,"y":-34,"type":2,"text":"Текст","power":16},{"x":129,"y":-34,"type":2,"text":"Текст","power":16},{"x":130,"y":-35,"type":2,"text":"Текст","power":16},{"x":131,"y":-35,"type":2,"text":"Текст","power":16},{"x":132,"y":-35,"type":2,"text":"Текст","power":16},{"x":133,"y":-35,"type":2,"text":"Текст","power":16},{"x":134,"y":-35,"type":2,"text":"Текст","power":16},{"x":135,"y":-35,"type":2,"text":"Текст","power":16},{"x":136,"y":-35,"type":2,"text":"Текст","power":16},{"x":137,"y":-35,"type":2,"text":"Текст","power":16},{"x":138,"y":-35,"type":2,"text":"Текст","power":16},{"x":139,"y":-35,"type":2,"text":"Текст","power":16},{"x":140,"y":-35,"type":2,"text":"Текст","power":16},{"x":141,"y":-35,"type":2,"text":"Текст","power":16},{"x":142,"y":-35,"type":2,"text":"Текст","power":16},{"x":143,"y":-35,"type":2,"text":"Текст","power":16},{"x":144,"y":-35,"type":2,"text":"Текст","power":16},{"x":145,"y":-35,"type":2,"text":"Текст","power":16},{"x":146,"y":-35,"type":2,"text":"Текст","power":16},{"x":147,"y":-35,"type":2,"text":"Текст","power":16},{"x":148,"y":-34,"type":2,"text":"Текст","power":16},{"x":149,"y":-34,"type":2,"text":"Текст","power":16},{"x":150,"y":-34,"type":2,"text":"Текст","power":16},{"x":151,"y":-34,"type":2,"text":"Текст","power":16},{"x":152,"y":-34,"type":2,"text":"Текст","power":16},{"x":152,"y":-33,"type":2,"text":"Текст","power":16},{"x":153,"y":-33,"type":2,"text":"Текст","power":16},{"x":154,"y":-33,"type":2,"text":"Текст","power":16},{"x":155,"y":-33,"type":2,"text":"Текст","power":16},{"x":156,"y":-33,"type":2,"text":"Текст","power":16},{"x":157,"y":-33,"type":2,"text":"Текст","power":16},{"x":158,"y":-33,"type":2,"text":"Текст","power":16},{"x":159,"y":-33,"type":2,"text":"Текст","power":16},{"x":160,"y":-33,"type":2,"text":"Текст","power":16},{"x":161,"y":-33,"type":2,"text":"Текст","power":16},{"x":162,"y":-33,"type":2,"text":"Текст","power":16},{"x":163,"y":-33,"type":2,"text":"Текст","power":16},{"x":163,"y":-32,"type":2,"text":"Текст","power":16},{"x":164,"y":-32,"type":2,"text":"Текст","power":16},{"x":165,"y":-32,"type":2,"text":"Текст","power":16},{"x":166,"y":-32,"type":2,"text":"Текст","power":16},{"x":167,"y":-32,"type":2,"text":"Текст","power":16},{"x":167,"y":-31,"type":2,"text":"Текст","power":16},{"x":168,"y":-31,"type":2,"text":"Текст","power":16},{"x":169,"y":-31,"type":2,"text":"Текст","power":16},{"x":170,"y":-31,"type":2,"text":"Текст","power":16},{"x":170,"y":-29,"type":9,"text":"Текст","power":16},{"x":173,"y":-31,"type":2,"text":"Текст","power":16},{"x":174,"y":-31,"type":2,"text":"Текст","power":16},{"x":175,"y":-31,"type":2,"text":"Текст","power":16},{"x":175,"y":3,"type":1,"text":"Текст","power":16},{"x":175,"y":2,"type":1,"text":"Текст","power":16},{"x":175,"y":1,"type":1,"text":"Текст","power":16},{"x":175,"y":0,"type":1,"text":"Текст","power":16},{"x":175,"y":-1,"type":1,"text":"Текст","power":16},{"x":175,"y":-2,"type":1,"text":"Текст","power":16},{"x":175,"y":-3,"type":1,"text":"Текст","power":16},{"x":175,"y":-4,"type":1,"text":"Текст","power":16},{"x":175,"y":-5,"type":1,"text":"Текст","power":16},{"x":175,"y":-6,"type":1,"text":"Текст","power":16},{"x":175,"y":-7,"type":1,"text":"Текст","power":16},{"x":175,"y":-8,"type":1,"text":"Текст","power":16},{"x":175,"y":-9,"type":1,"text":"Текст","power":16},{"x":175,"y":-10,"type":1,"text":"Текст","power":16},{"x":175,"y":-11,"type":1,"text":"Текст","power":16},{"x":175,"y":-12,"type":1,"text":"Текст","power":16},{"x":175,"y":-13,"type":1,"text":"Текст","power":16},{"x":175,"y":-14,"type":1,"text":"Текст","power":16},{"x":175,"y":-15,"type":1,"text":"Текст","power":16},{"x":175,"y":-16,"type":1,"text":"Текст","power":16},{"x":175,"y":-17,"type":1,"text":"Текст","power":16},{"x":175,"y":-18,"type":1,"text":"Текст","power":16},{"x":175,"y":-19,"type":1,"text":"Текст","power":16},{"x":175,"y":-20,"type":1,"text":"Текст","power":16},{"x":175,"y":-21,"type":1,"text":"Текст","power":16},{"x":172,"y":-22,"type":2,"text":"Текст","power":16},{"x":172,"y":-23,"type":2,"text":"Текст","power":16},{"x":172,"y":-25,"type":2,"text":"Текст","power":16},{"x":172,"y":-26,"type":2,"text":"Текст","power":16},{"x":172,"y":-27,"type":2,"text":"Текст","power":16},{"x":171,"y":-28,"type":2,"text":"Текст","power":16},{"x":172,"y":-28,"type":2,"text":"Текст","power":16},{"x":175,"y":-22,"type":1,"text":"Текст","power":16},{"x":175,"y":-23,"type":1,"text":"Текст","power":16},{"x":175,"y":-24,"type":1,"text":"Текст","power":16},{"x":175,"y":-25,"type":1,"text":"Текст","power":16},{"x":175,"y":-26,"type":1,"text":"Текст","power":16},{"x":175,"y":-27,"type":1,"text":"Текст","power":16},{"x":175,"y":-28,"type":1,"text":"Текст","power":16},{"x":175,"y":-29,"type":1,"text":"Текст","power":16},{"x":175,"y":-30,"type":1,"text":"Текст","power":16},{"x":172,"y":-21,"type":3,"text":"Текст","power":16},{"x":172,"y":-20,"type":3,"text":"Текст","power":16},{"x":172,"y":-19,"type":3,"text":"Текст","power":16},{"x":172,"y":-18,"type":3,"text":"Текст","power":16},{"x":172,"y":-17,"type":3,"text":"Текст","power":16},{"x":172,"y":-16,"type":3,"text":"Текст","power":16},{"x":172,"y":-15,"type":3,"text":"Текст","power":16},{"x":172,"y":-14,"type":3,"text":"Текст","power":16},{"x":172,"y":-13,"type":3,"text":"Текст","power":16},{"x":172,"y":-12,"type":3,"text":"Текст","power":16},{"x":172,"y":-11,"type":3,"text":"Текст","power":16},{"x":172,"y":-6,"type":3,"text":"Текст","power":16},{"x":172,"y":-7,"type":3,"text":"Текст","power":16},{"x":172,"y":-8,"type":3,"text":"Текст","power":16},{"x":172,"y":-9,"type":3,"text":"Текст","power":16},{"x":172,"y":-10,"type":3,"text":"Текст","power":16},{"x":172,"y":-5,"type":3,"text":"Текст","power":16},{"x":172,"y":-4,"type":3,"text":"Текст","power":16},{"x":172,"y":-3,"type":3,"text":"Текст","power":16},{"x":172,"y":-2,"type":3,"text":"Текст","power":16},{"x":172,"y":-1,"type":3,"text":"Текст","power":16},{"x":172,"y":0,"type":3,"text":"Текст","power":16},{"x":172,"y":1,"type":3,"text":"Текст","power":16},{"x":172,"y":2,"type":3,"text":"Текст","power":16},{"x":172,"y":-24,"type":2,"text":"Текст","power":16},{"x":171,"y":-31,"type":1,"text":"Текст","power":16},{"x":172,"y":-31,"type":1,"text":"Текст","power":16},{"x":171,"y":-29,"type":9,"text":"Текст","power":16},{"x":172,"y":-29,"type":9,"text":"Текст","power":16},{"x":131,"y":-32,"type":9,"text":"Текст","power":16},{"x":131,"y":-31,"type":2,"text":"Текст","power":16},{"x":12,"y":-1,"type":2,"text":"Текст","power":16,"color":"#883333","opacity":1,"passHook":false},{"x":13,"y":-1,"type":2,"text":"Текст","power":16,"color":"#883333","opacity":1,"passHook":false},{"x":14,"y":-1,"type":2,"text":"Текст","power":16,"color":"#883333","opacity":1,"passHook":false},{"x":9,"y":1,"type":2,"text":"Текст","power":16,"color":"#883333","opacity":1,"passHook":false},{"x":8,"y":1,"type":2,"text":"Текст","power":16,"color":"#883333","opacity":1,"passHook":false}];
+    
+    gameActive = true;
+    document.getElementById('main-menu').style.display = 'none';
+    ['hud','hotbar','tee-settings'].forEach(id => document.getElementById(id).style.display = 'flex');
+    spawnPoint = { x: 100, y: 100 };
+    resetTee();
+}
+
+function updateMenuInfo() {
+    for(let i=1; i<=3; i++) {
+        const raw = localStorage.getItem('ddnet_slot_'+i);
+        const name = localStorage.getItem('ddnet_name_'+i);
+        document.getElementById('title-'+i).innerText = name || "Карта " + i;
+        document.getElementById('info-'+i).innerText = raw ? 'Блоков: ' + JSON.parse(raw).length : 'Пусто';
+    }
+}
+updateMenuInfo();
+
+function renameSlot(s) {
+    const n = prompt("Название:", document.getElementById('title-'+s).innerText);
+    if(n) { localStorage.setItem('ddnet_name_'+s, n); updateMenuInfo(); }
+}
+
+function loadSlot(s) {
+    currentSlot = s;
+    isTutorial = false;
+    const data = localStorage.getItem('ddnet_slot_'+s);
+    map = data ? JSON.parse(data) : [];
+    gameActive = true;
+    document.getElementById('main-menu').style.display = 'none';
+    ['hud','hotbar','tee-settings'].forEach(id => document.getElementById(id).style.display = 'flex');
+    spawnPoint = { x: 100, y: 100 };
+    resetTee();
+}
+
+function saveMap() { 
+    if(gameActive && !isTutorial) {
+        localStorage.setItem('ddnet_slot_'+currentSlot, JSON.stringify(map)); 
+    }
+}
+
+window.onkeydown = e => {
+    if (document.activeElement.tagName === 'INPUT') return;
+    if (e.code === 'KeyM') { gameActive = false; document.getElementById('main-menu').style.display = 'flex'; updateMenuInfo(); return; }
+    if(keys[e.code]) return; keys[e.code] = true;
+    if(e.code === 'KeyE') { editMode = !editMode; closeProps(); }
+    if(e.key >= '1' && e.key <= '9') setType(parseInt(e.key));
+    if(e.code === 'KeyR') resetTee();
+    if(e.code === 'Space' && !editMode && !tee.frozen) {
+        if(tee.grounded) { tee.vy = -phys.jump; tee.grounded = false; tee.jumps = 1; }
+        else if(tee.jumps < 2 && tee.canDoubleJump) { tee.vy = -phys.dj; tee.jumps = 2; }
+    }
+};
+window.onkeyup = e => keys[e.code] = false;
+
+window.onmousedown = e => {
+    if (!gameActive || e.target.closest('.ui-element')) return;
+    const tx = Math.floor((e.clientX + camera.x) / tileSize), ty = Math.floor((e.clientY + camera.y) / tileSize);
+    if (e.button === 1 || (editMode && keys['Space'])) { isPanning = true; return; }
+    if(editMode) {
+        if(isTutorial) return; // ЗАПРЕТ РЕДАКТИРОВАНИЯ
+        const found = map.find(t => t.x === tx && t.y === ty);
+        if (e.button === 0) {
+            if (found) { openProps(found); return; }
+            isDrawing = true; addBlock(tx, ty);
+        } else if (e.button === 2) { isRemoving = true; removeBlock(tx, ty); }
+    } else if (e.button === 2) castHook();
+};
+
+window.onmouseup = e => {
+    isDrawing = false; isRemoving = false; isPanning = false;
+    if (e.button === 2 && !editMode) tee.hook.active = false;
+};
+
+function castHook() {
+    const sX = tee.x + TEE_W/2, sY = tee.y + TEE_H/2;
+    const angle = Math.atan2(mouse.y + camera.y - sY, mouse.x + camera.x - sX);
+    for(let d=0; d<500; d+=4) {
+        const cx = sX + Math.cos(angle)*d, cy = sY + Math.sin(angle)*d;
+        const b = map.find(t => t.x === Math.floor(cx/tileSize) && t.y === Math.floor(cy/tileSize));
+        if(b) {
+            if(b.type === 1) { tee.hook.active = true; tee.hook.x = cx; tee.hook.y = cy; return; }
+            if(b.type === 2 && !b.passHook) break;
+        }
+    }
+}
+
+function update() {
+    if(!gameActive || editMode) { canvas.style.cursor = "default"; return; }
+    canvas.style.cursor = "none";
+    let accel = (tee.grounded && !tee.frozen) ? phys.accel : (tee.frozen ? 0 : phys.airAccel);
+    if(!tee.frozen) {
+        if(keys['KeyA']) { tee.vx -= accel; tee.walkCycle += 0.2; }
+        if(keys['KeyD']) { tee.vx += accel; tee.walkCycle += 0.2; }
+    }
+    tee.vx *= tee.grounded ? phys.groundFric : phys.airFric;
+    tee.vy += phys.grav;
+    if(tee.hook.active) {
+        const dx = tee.hook.x - (tee.x + TEE_W/2), dy = tee.hook.y - (tee.y + TEE_H/2), d = Math.sqrt(dx*dx + dy*dy);
+        tee.vx += (dx/d) * phys.hookPull; tee.vy += (dy/d) * phys.hookPull;
+    }
+    tee.x += tee.vx; checkColl(true);
+    tee.y += tee.vy; checkColl(false);
+    camera.x += (tee.x - width/2 + TEE_W/2 - camera.x) * 0.1;
+    camera.y += (tee.y - height/2 + TEE_H/2 - camera.y) * 0.1;
+}
+
+function checkColl(horiz) {
+    if(!horiz) tee.grounded = false;
+    for(let t of map) {
+        const tx = t.x * tileSize, ty = t.y * tileSize;
+        if(tee.x < tx + tileSize && tee.x + TEE_W > tx && tee.y < ty + tileSize && tee.y + TEE_H > ty) {
+            if(t.type <= 2) { 
+                if(horiz) { tee.x = tee.vx > 0 ? tx - TEE_W : tx + tileSize; tee.vx = 0; }
+                else {
+                    if(tee.vy > 0) { tee.y = ty - TEE_H; tee.grounded = true; tee.jumps = 0; tee.frozen = false; }
+                    else { tee.y = ty + tileSize; }
+                    tee.vy = 0;
+                }
+            } else {
+                if(t.type === 3) { resetTee(); return; }
+                if(t.type === 4) tee.canDoubleJump = true; 
+                if(t.type === 5) tee.canDoubleJump = false; 
+                if(t.type === 6) { tee.vy = -(t.power || 16); tee.jumps = 1; }
+                if(t.type === 7) tee.frozen = true;
+                if(t.type === 9) spawnPoint = { x: tx, y: ty - 2 };
+            }
+        }
+    }
+}
+
+function draw() {
+    ctx.fillStyle = '#111'; ctx.fillRect(0, 0, width, height);
+    if(!gameActive) { requestAnimationFrame(draw); return; }
+    ctx.save(); ctx.translate(-camera.x, -camera.y);
+    if(editMode) {
+        ctx.strokeStyle = "rgba(255,255,255,0.03)"; ctx.beginPath();
+        for(let x = Math.floor(camera.x/tileSize)*tileSize; x < camera.x+width; x+=tileSize) { ctx.moveTo(x, camera.y); ctx.lineTo(x, camera.y+height); }
+        for(let y = Math.floor(camera.y/tileSize)*tileSize; y < camera.y+height; y+=tileSize) { ctx.moveTo(camera.x, y); ctx.lineTo(camera.x+width, y); }
+        ctx.stroke();
+    }
+    map.forEach(t => {
+        if(t.type === 8) { 
+            ctx.fillStyle= t.color || "white"; ctx.font="14px Arial"; ctx.textAlign="center"; 
+            ctx.fillText(t.text||"", t.x*tileSize+tileSize/2, t.y*tileSize+tileSize/2); return; 
+        }
+        if(t.type > 3 && !editMode) return;
+        
+        ctx.globalAlpha = t.opacity !== undefined ? t.opacity : 1;
+        ctx.fillStyle = t.color || defaultColors[t.type];
+        ctx.fillRect(t.x * tileSize, t.y * tileSize, tileSize, tileSize);
+        ctx.globalAlpha = 1;
+
+        if(editMode) { ctx.strokeStyle = (selectedObj === t) ? "#0ff" : "rgba(255,255,255,0.1)"; ctx.strokeRect(t.x*tileSize, t.y*tileSize, tileSize, tileSize); }
+    });
+    const cx = tee.x + TEE_W/2, cy = tee.y + TEE_H/2, fA = Math.sin(tee.walkCycle)*10;
+    ctx.fillStyle = tee.feetColor; ctx.beginPath(); ctx.arc(cx-12+fA, tee.y+TEE_H-4, 9, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+12-fA, tee.y+TEE_H-4, 9, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = tee.frozen ? '#afeeee' : tee.bodyColor; ctx.beginPath(); ctx.arc(cx, cy-4, TEE_W/2, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(cx-10+tee.vx, cy-9+tee.vy*0.1, 7, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+10+tee.vx, cy-9+tee.vy*0.1, 7, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'black'; ctx.beginPath(); ctx.arc(cx-10+tee.vx*1.3, cy-9+tee.vy*0.2, 2.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+10+tee.vx*1.3, cy-9+tee.vy*0.2, 2.5, 0, Math.PI*2); ctx.fill();
+    if(tee.hook.active) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(tee.hook.x, tee.hook.y); ctx.stroke(); }
+    ctx.restore();
+    if(!editMode) { ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(mouse.x, mouse.y, 3, 0, Math.PI*2); ctx.fill(); }
+    update(); requestAnimationFrame(draw);
+}
+
+function setType(n) { selectedType = n; document.querySelectorAll('.slot').forEach((s, i) => s.classList.toggle('active', i === n-1)); }
+
+function openProps(obj) {
+    if(isTutorial) return; // ЗАПРЕТ РЕДАКТИРОВАНИЯ СВОЙСТВ
+    selectedObj = obj; document.getElementById('properties').style.display = 'block';
+    let h = `<b>Блок: ${obj.type}</b><br>`;
+    h += `<label>Цвет:</label><input type="color" value="${obj.color || defaultColors[obj.type]}" oninput="selectedObj.color=this.value;saveMap()">`;
+    if(obj.type === 2) {
+        h += `<label>Прозрачность:</label><input type="number" step="0.1" min="0" max="1" value="${obj.opacity||1}" oninput="selectedObj.opacity=parseFloat(this.value);saveMap()">`;
+        h += `<label>Пропуск хука:</label><input type="checkbox" ${obj.passHook?'checked':''} onchange="selectedObj.passHook=this.checked;saveMap()">`;
+    } else if(obj.type === 8) {
+        h += `<label>Текст:</label><input type="text" value="${obj.text||''}" oninput="selectedObj.text=this.value;saveMap()">`;
+    } else {
+        h += `<label>Сила/Параметр:</label><input type="number" value="${obj.power||16}" oninput="selectedObj.power=parseFloat(this.value);saveMap()">`;
+    }
+    document.getElementById('prop-fields').innerHTML = h;
+}
+
+function closeProps() { document.getElementById('properties').style.display = 'none'; selectedObj = null; }
+function resetTee() { tee.x = spawnPoint.x; tee.y = spawnPoint.y; tee.vx = 0; tee.vy = 0; tee.jumps = 0; tee.canDoubleJump = true; tee.frozen = false; tee.hook.active = false; }
+
+function addBlock(tx, ty) { 
+    if(isTutorial) return; // ЗАПРЕТ ДОБАВЛЕНИЯ
+    if (!map.some(t => t.x === tx && t.y === ty)) { 
+        let newBlock = { x: tx, y: ty, type: selectedType, text: "Текст", power: 16, color: defaultColors[selectedType] };
+        if(selectedType === 2) { newBlock.opacity = 1; newBlock.passHook = false; }
+        map.push(newBlock); saveMap(); 
+    } 
+}
+
+function removeBlock(tx, ty) { 
+    if(isTutorial) return; // ЗАПРЕТ УДАЛЕНИЯ
+    const i = map.findIndex(t => t.x === tx && t.y === ty); if (i !== -1) { map.splice(i, 1); saveMap(); } 
+}
+
+window.onmousemove = e => { mouse = { x: e.clientX, y: e.clientY }; if(isPanning) { camera.x -= e.movementX; camera.y -= e.movementY; } else if(editMode) { const tx = Math.floor((e.clientX+camera.x)/tileSize), ty = Math.floor((e.clientY+camera.y)/tileSize); if(isDrawing) addBlock(tx, ty); if(isRemoving) removeBlock(tx, ty); } };
+document.getElementById('bodyColor').oninput = e => tee.bodyColor = e.target.value;
+document.getElementById('feetColor').oninput = e => tee.feetColor = e.target.value;
+window.oncontextmenu = e => e.preventDefault();
+draw();
+</script>
+<script>
+(function() {
+    // 1. Настройка нового блока
+    if (typeof defaultColors !== 'undefined') defaultColors[10] = "#9b59b6";
+
+    const hb = document.getElementById('hotbar');
+    if (hb && !document.getElementById('tp-btn')) {
+        const btn = document.createElement('div');
+        btn.id = 'tp-btn';
+        btn.className = 'slot';
+        btn.style.color = '#9b59b6';
+        btn.innerHTML = 'ТЕЛЕ';
+        btn.onclick = () => { if(typeof setType === 'function') setType(10); };
+        hb.appendChild(btn);
+    }
+
+    let tpCooldown = 0;
+
+    // 2. Логика телепортации (ID -> Target)
+    const originalStep = window.requestAnimationFrame;
+    window.requestAnimationFrame = function(callback) {
+        if (typeof gameActive !== 'undefined' && gameActive && !editMode) {
+            if (tpCooldown > 0) tpCooldown--;
+            
+            const tx = Math.floor((tee.x + 21) / 40); 
+            const ty = Math.floor((tee.y + 21) / 40);
+            const currentBlock = map.find(b => b.x === tx && b.y === ty && b.type === 10);
+            
+            if (currentBlock && tpCooldown === 0) {
+                // Берем цель, которая записана во второе поле (targetID)
+                const targetID = parseInt(currentBlock.targetID);
+                const dest = map.find(b => b.type === 10 && parseInt(b.myID) === targetID);
+
+                if (dest) {
+                    tee.x = dest.x * 40;
+                    tee.y = dest.y * 40;
+                    tee.vx = 0; tee.vy = 0;
+                    tpCooldown = 50; 
+                }
+            }
+        }
+        return originalStep(callback);
+    };
+
+    // 3. Новые поля в меню: МОЙ ID и КУДА ТЕЛЕПОРТИРОВАТЬ
+    const oldOpen = window.openProps;
+    window.openProps = function(obj) {
+        if (oldOpen) oldOpen(obj);
+        if (obj.type === 10) {
+            const fields = document.getElementById('prop-fields');
+            if (fields) {
+                // Добавляем два поля ввода
+                fields.innerHTML += `
+                    <label>ID этого телепорта:</label>
+                    <input type="number" id="p-myid" value="${obj.myID || 0}">
+                    <label>Куда ведет (ID цели):</label>
+                    <input type="number" id="p-targetid" value="${obj.targetID || 0}">
+                `;
+            }
+        }
+    };
+
+    // 4. ИСПРАВЛЕННОЕ СОХРАНЕНИЕ (чтобы не сбрасывалось на 16)
+    window.closeProps = function() {
+        if (selectedObj) {
+            const myIdInput = document.getElementById('p-myid');
+            const targetIdInput = document.getElementById('p-targetid');
+            
+            if (myIdInput && targetIdInput) {
+                selectedObj.myID = parseInt(myIdInput.value);
+                selectedObj.targetID = parseInt(targetIdInput.value);
+                // Чтобы твой старый код не перезаписал это, убираем дефолтный power
+                selectedObj.power = 0; 
+            }
+            
+            if (typeof saveMap === 'function') saveMap();
+        }
+        document.getElementById('properties').style.display = 'none';
+        selectedObj = null;
+    };
+})();
+</script>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script>
+(function() {
+    // 1. ИНТЕРФЕЙС
+    const menu = document.querySelector('.menu-btns');
+    if (menu && !document.getElementById('mp-block')) {
+        const mp = document.createElement('div');
+        mp.id = 'mp-block';
+        mp.style = "margin-top:15px; background:#222; padding:15px; border-radius:12px; border:1px solid #3498db; color:white; font-size:12px; width:300px; text-align:center;";
+        mp.innerHTML = `
+            <div id="my-id-val" style="color:#888; margin-bottom:5px;">Загрузка ID...</div>
+            <button onclick="navigator.clipboard.writeText(document.getElementById('my-id-val').innerText); alert('ID скопирован!')" style="width:100%; margin-bottom:10px; cursor:pointer;">КОПИРОВАТЬ ID</button>
+            <input type="text" id="target-id" placeholder="ID друга" style="width:100%; padding:5px; margin-bottom:5px; box-sizing:border-box;">
+            <button id="conn-btn" style="width:100%; background:#2ecc71; color:white; border:none; padding:10px; cursor:pointer; font-weight:bold;">ЗАЙТИ К ДРУГУ</button>
+        `;
+        menu.appendChild(mp);
+    }
+
+    const peer = new Peer();
+    let conn = null, friendData = null;
+    peer.on('open', id => { document.getElementById('my-id-val').innerText = id; });
+    peer.on('connection', c => { conn = c; setupConn(true); });
+    document.getElementById('conn-btn').onclick = () => { conn = peer.connect(document.getElementById('target-id').value); setupConn(false); };
+
+    function setupConn(isHost) {
+        conn.on('open', () => {
+            setInterval(() => {
+                if (conn && conn.open) {
+                    conn.send({
+                        x: tee.x, y: tee.y, vx: tee.vx, vy: tee.vy,
+                        bc: document.getElementById('bodyColor').value,
+                        fc: document.getElementById('feetColor').value,
+                        m: isHost ? map : null
+                    });
+                }
+            }, 30);
+        });
+        conn.on('data', d => { if(d.m) map = d.m; friendData = d; });
+    }
+
+    // 2. ТОТ САМЫЙ ВИЗУАЛ ИЗ ТВОЕГО ФАЙЛА (БЕЗ ИЗМЕНЕНИЙ)
+    function drawFriendTee(p) {
+        ctx.save();
+        // Рисуем в координатах друга относительно твоей камеры
+        ctx.translate(p.x - camera.x, p.y - camera.y);
+
+        const w = window.TEE_W || 34;
+        const h = window.TEE_H || 34;
+
+        // НОГИ (точно как у тебя в коде)
+        ctx.fillStyle = p.fc;
+        [ {x: 7, y: 32}, {x: 23, y: 32} ].forEach(pos => {
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // ТЕЛО (точно как у тебя в коде)
+        ctx.fillStyle = p.bc;
+        ctx.beginPath();
+        // Рисуем круг или скругленный прямоугольник
+        if (ctx.roundRect) {
+            ctx.roundRect(0, 0, w, h - 5, 10);
+            ctx.fill();
+        } else {
+            ctx.arc(w/2, h/2 - 2, w/2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // ГЛАЗА (точно как у тебя в коде)
+        const lookDir = (p.vx || 0) * 1.5;
+        ctx.fillStyle = 'white';
+        // Левый
+        ctx.beginPath(); ctx.arc(10 + lookDir, 12, 6, 0, Math.PI * 2); ctx.fill();
+        // Правый
+        ctx.beginPath(); ctx.arc(24 + lookDir, 12, 6, 0, Math.PI * 2); ctx.fill();
+        
+        ctx.fillStyle = 'black';
+        // Зрачки
+        ctx.beginPath(); ctx.arc(11 + lookDir, 12, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(25 + lookDir, 12, 3, 0, Math.PI * 2); ctx.fill();
+
+        ctx.restore();
+    }
+
+    // 3. ВСТАВКА В ИГРУ
+    const originalRAF = window.requestAnimationFrame;
+    window.requestAnimationFrame = function(callback) {
+        const res = originalRAF(callback);
+        // Рисуем друга ОТДЕЛЬНО, не трогая основной tee
+        if (friendData && gameActive) {
+            drawFriendTee(friendData);
+        }
+        return res;
+    };
+})();
+</script>
+</body>
+</html>
