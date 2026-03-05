@@ -388,33 +388,51 @@ draw();
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script>
 (function() {
-    // 1. ИНТЕРФЕЙС
     const menu = document.querySelector('.menu-btns');
     if (menu && !document.getElementById('mp-block')) {
         const mp = document.createElement('div');
         mp.id = 'mp-block';
         mp.style = "margin-top:15px; background:#222; padding:15px; border-radius:12px; border:1px solid #3498db; color:white; font-size:12px; width:300px; text-align:center;";
         mp.innerHTML = `
-            <div id="my-id-val" style="color:#888; margin-bottom:5px;">Загрузка ID...</div>
-            <button onclick="navigator.clipboard.writeText(document.getElementById('my-id-val').innerText); alert('ID скопирован!')" style="width:100%; margin-bottom:10px; cursor:pointer;">КОПИРОВАТЬ ID</button>
-            <input type="text" id="target-id" placeholder="ID друга" style="width:100%; padding:5px; margin-bottom:5px; box-sizing:border-box;">
-            <button id="conn-btn" style="width:100%; background:#2ecc71; color:white; border:none; padding:10px; cursor:pointer; font-weight:bold;">ЗАЙТИ К ДРУГУ</button>
+            <div style="font-weight:bold; color:#3498db; margin-bottom:10px;">МУЛЬТИПЛЕЕР (ЛОББИ)</div>
+            <div id="my-id-val" style="color:#888; margin-bottom:5px; font-family:monospace; background:#111; padding:5px;">Загрузка...</div>
+            <button onclick="navigator.clipboard.writeText(document.getElementById('my-id-val').innerText); alert('ID скопирован!')" style="width:100%; margin-bottom:10px; cursor:pointer;">КОПИРОВАТЬ МОЙ ID</button>
+            <input type="text" id="target-id" placeholder="ID друга" style="width:100%; padding:5px; margin-bottom:5px; box-sizing:border-box; background:#111; color:white; border:1px solid #444;">
+            <button id="conn-btn" style="width:100%; background:#2ecc71; color:white; border:none; padding:10px; border-radius:5px; cursor:pointer;">ПОДКЛЮЧИТЬСЯ К ДРУГУ</button>
+            <div id="mp-count" style="margin-top:5px; color:#aaa;">Игроков в сети: 1</div>
         `;
         menu.appendChild(mp);
     }
 
     const peer = new Peer();
-    let conn = null, friendData = null;
-    peer.on('open', id => { document.getElementById('my-id-val').innerText = id; });
-    peer.on('connection', c => { conn = c; setupConn(true); });
-    document.getElementById('conn-btn').onclick = () => { conn = peer.connect(document.getElementById('target-id').value); setupConn(false); };
+    let connections = []; // Список всех подключений
+    let players = {};      // Данные всех игроков
 
-    function setupConn(isHost) {
+    peer.on('open', id => { document.getElementById('my-id-val').innerText = id; });
+
+    // Если к нам кто-то подключается
+    peer.on('connection', conn => {
+        setupConn(conn, true);
+    });
+
+    // Если мы подключаемся к кому-то
+    document.getElementById('conn-btn').onclick = () => {
+        const id = document.getElementById('target-id').value;
+        const conn = peer.connect(id);
+        setupConn(conn, false);
+    };
+
+    function setupConn(conn, isHost) {
         conn.on('open', () => {
+            connections.push(conn);
+            updatePlayerCount();
+
+            // Отправляем данные всем
             setInterval(() => {
-                if (conn && conn.open) {
+                if (conn.open) {
                     conn.send({
-                        x: tee.x, y: tee.y, vx: tee.vx, vy: tee.vy,
+                        id: peer.id,
+                        x: tee.x, y: tee.y, vx: tee.vx,
                         bc: document.getElementById('bodyColor').value,
                         fc: document.getElementById('feetColor').value,
                         m: isHost ? map : null
@@ -422,65 +440,64 @@ draw();
                 }
             }, 30);
         });
-        conn.on('data', d => { if(d.m) map = d.m; friendData = d; });
-    }
 
-    // 2. ТОТ САМЫЙ ВИЗУАЛ ИЗ ТВОЕГО ФАЙЛА (БЕЗ ИЗМЕНЕНИЙ)
-    function drawFriendTee(p) {
-        ctx.save();
-        // Рисуем в координатах друга относительно твоей камеры
-        ctx.translate(p.x - camera.x, p.y - camera.y);
-
-        const w = window.TEE_W || 34;
-        const h = window.TEE_H || 34;
-
-        // НОГИ (точно как у тебя в коде)
-        ctx.fillStyle = p.fc;
-        [ {x: 7, y: 32}, {x: 23, y: 32} ].forEach(pos => {
-            ctx.beginPath();
-            ctx.arc(pos.x, pos.y, 8, 0, Math.PI * 2);
-            ctx.fill();
+        conn.on('data', data => {
+            if (data.m) map = data.m;
+            players[data.id] = data; // Сохраняем игрока по его уникальному ID
         });
 
-        // ТЕЛО (точно как у тебя в коде)
+        conn.on('close', () => {
+            connections = connections.filter(c => c !== conn);
+            updatePlayerCount();
+        });
+    }
+
+    function updatePlayerCount() {
+        document.getElementById('mp-count').innerText = "Игроков в сети: " + (connections.length + 1);
+    }
+
+    // Отрисовка всех игроков
+    function drawOtherTee(p) {
+        ctx.save();
+        ctx.translate(p.x - camera.x, p.y - camera.y);
+        const w = 34, h = 34;
+
+        // Ноги
+        ctx.fillStyle = p.fc;
+        [ {x: 7, y: 32}, {x: 23, y: 32} ].forEach(pos => {
+            ctx.beginPath(); ctx.arc(pos.x, pos.y, 8, 0, Math.PI * 2); ctx.fill();
+        });
+
+        // Тело
         ctx.fillStyle = p.bc;
         ctx.beginPath();
-        // Рисуем круг или скругленный прямоугольник
-        if (ctx.roundRect) {
-            ctx.roundRect(0, 0, w, h - 5, 10);
-            ctx.fill();
-        } else {
-            ctx.arc(w/2, h/2 - 2, w/2, 0, Math.PI * 2);
-            ctx.fill();
-        }
+        if (ctx.roundRect) { ctx.roundRect(0, 0, w, h - 5, 10); ctx.fill(); }
+        else { ctx.arc(w/2, h/2 - 2, w/2, 0, Math.PI * 2); ctx.fill(); }
 
-        // ГЛАЗА (точно как у тебя в коде)
-        const lookDir = (p.vx || 0) * 1.5;
+        // Глаза
+        const look = (p.vx || 0) * 1.5;
         ctx.fillStyle = 'white';
-        // Левый
-        ctx.beginPath(); ctx.arc(10 + lookDir, 12, 6, 0, Math.PI * 2); ctx.fill();
-        // Правый
-        ctx.beginPath(); ctx.arc(24 + lookDir, 12, 6, 0, Math.PI * 2); ctx.fill();
-        
+        ctx.beginPath(); ctx.arc(10 + look, 12, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(24 + look, 12, 6, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = 'black';
-        // Зрачки
-        ctx.beginPath(); ctx.arc(11 + lookDir, 12, 3, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(25 + lookDir, 12, 3, 0, Math.PI * 2); ctx.fill();
-
+        ctx.beginPath(); ctx.arc(11 + look, 12, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(25 + look, 12, 3, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
     }
 
-    // 3. ВСТАВКА В ИГРУ
     const originalRAF = window.requestAnimationFrame;
     window.requestAnimationFrame = function(callback) {
         const res = originalRAF(callback);
-        // Рисуем друга ОТДЕЛЬНО, не трогая основной tee
-        if (friendData && gameActive) {
-            drawFriendTee(friendData);
+        if (gameActive) {
+            for (let id in players) {
+                // Чтобы не рисовать самого себя (если данные зациклились)
+                if (id !== peer.id) drawOtherTee(players[id]);
+            }
         }
         return res;
     };
 })();
 </script>
 </body>
+
 </html>
