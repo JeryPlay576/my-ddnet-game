@@ -391,7 +391,8 @@ draw();
     const peer = new Peer();
     let players = {}; 
     let connections = [];
-    let chatMessages = []; 
+    // ДОБАВЛЯЕМ ПЕРВОЕ СООБЩЕНИЕ В СПИСОК
+    let chatMessages = [{ nick: "СИСТЕМА", text: "/Нажмите Enter чтобы писать в чат/", isSystem: true }]; 
     let myName = localStorage.getItem('mp-nick') || "Player_" + Math.floor(Math.random() * 999);
     let isTyping = false;
     let chatInputText = "";
@@ -416,11 +417,11 @@ draw();
         document.getElementById('n-in').oninput = (e) => { myName = e.target.value; localStorage.setItem('mp-nick', myName); };
     }
 
-    // 2. УПРАВЛЕНИЕ ЧАТОМ (КЛАВИАТУРА)
+    // 2. УПРАВЛЕНИЕ ЧАТОМ
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             const mMenu = document.getElementById('main-menu');
-            if (mMenu && mMenu.style.display !== 'none') return; // Не открывать чат в меню
+            if (mMenu && mMenu.style.display !== 'none') return;
 
             if (!isTyping) {
                 isTyping = true;
@@ -428,8 +429,7 @@ draw();
             } else {
                 if (chatInputText.trim()) {
                     const pkg = { type: 'chat', nick: myName, text: chatInputText };
-                    addChatMessage(myName, chatInputText); // Добавляем себе
-                    // Отправляем всем (если мы хост) или хосту (если мы игрок)
+                    addChatMessage(myName, chatInputText);
                     connections.forEach(c => { if(c.open) c.send(pkg); });
                 }
                 isTyping = false;
@@ -440,16 +440,16 @@ draw();
             } else if (e.key.length === 1) {
                 chatInputText += e.key;
             }
-            e.preventDefault(); // Чтобы персонаж не двигался при печати
+            e.preventDefault();
         }
     });
 
     function addChatMessage(nick, text) {
         chatMessages.push({ nick, text, ts: Date.now() });
-        if (chatMessages.length > 10) chatMessages.shift();
+        if (chatMessages.length > 12) chatMessages.splice(1, 1); // Удаляем старые, но оставляем системное (индекс 0)
     }
 
-    // 3. СЕТЕВАЯ ЛОГИКА (РЕТРАНСЛЯЦИЯ ХОСТОМ)
+    // 3. СЕТЕВАЯ ЛОГИКА
     peer.on('connection', c => setup(c, true));
 
     function setup(conn, isHost) {
@@ -469,17 +469,12 @@ draw();
         conn.on('data', data => {
             if (data.type === 'pos') {
                 players[data.id] = data;
-                if (isHost) { // Хост рассылает позиции всем
-                    connections.forEach(c => { if (c.open && c.peer !== data.id) c.send(data); });
-                }
+                if (isHost) connections.forEach(c => { if (c.open && c.peer !== data.id) c.send(data); });
             } else if (data.type === 'chat') {
                 addChatMessage(data.nick, data.text);
-                if (isHost) { // ВАЖНО: Хост пересылает сообщение всем остальным игрокам
-                    connections.forEach(c => { if (c.open && c.peer !== conn.peer) c.send(data); });
-                }
+                if (isHost) connections.forEach(c => { if (c.open && c.peer !== conn.peer) c.send(data); });
             }
         });
-        
         conn.on('close', () => {
             connections = connections.filter(c => c !== conn);
             delete players[conn.peer];
@@ -489,28 +484,26 @@ draw();
     // 4. ОТРИСОВКА ЧАТА НА CANVAS
     function drawChat() {
         ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0); // Сброс камеры
+        ctx.setTransform(1, 0, 0, 1, 0, 0); 
         
-        // Рисуем список сообщений
         ctx.font = "bold 14px Arial";
         chatMessages.forEach((m, i) => {
             const y = window.innerHeight - 80 - (chatMessages.length - i) * 22;
             const text = m.nick + ": " + m.text;
             const tw = ctx.measureText(text).width;
             
-            ctx.fillStyle = "rgba(0,0,0,0.5)";
+            ctx.fillStyle = m.isSystem ? "rgba(231, 76, 60, 0.6)" : "rgba(0,0,0,0.5)";
             ctx.fillRect(15, y - 16, tw + 20, 22);
             
-            ctx.fillStyle = "#3498db";
+            ctx.fillStyle = m.isSystem ? "#f1c40f" : "#3498db";
             ctx.fillText(m.nick + ": ", 20, y);
             ctx.fillStyle = "white";
             ctx.fillText(m.text, 20 + ctx.measureText(m.nick + ": ").width, y);
         });
 
-        // Строка ввода
         if (isTyping) {
             ctx.fillStyle = "rgba(0,0,0,0.85)";
-            ctx.fillRect(15, window.innerHeight - 45, 400, 30);
+            ctx.fillRect(15, window.innerHeight - 45, 450, 30);
             ctx.strokeStyle = "#3498db";
             ctx.lineWidth = 2;
             ctx.strokeRect(15, window.innerHeight - 45, 400, 30);
@@ -523,7 +516,7 @@ draw();
     // 5. ОТРИСОВКА ИГРОКОВ
     function drawRemote(p) {
         ctx.save();
-        if (p.ha) { // Линия хука
+        if (p.ha) { 
             ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.moveTo(p.x + 16 - camera.x, p.y + 16 - camera.y);
             ctx.lineTo(p.hx - camera.x, p.hy - camera.y); ctx.stroke();
@@ -550,7 +543,7 @@ draw();
         const r = nRAF(cb);
         if (typeof gameActive !== 'undefined' && gameActive) {
             for (let id in players) { if (id !== peer.id) drawRemote(players[id]); }
-            drawChat(); // Рисуем чат последним слоем
+            drawChat();
         }
         return r;
     };
@@ -558,6 +551,7 @@ draw();
 </script>
 </body>
 </html>
+
 
 
 
