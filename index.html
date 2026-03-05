@@ -391,7 +391,7 @@ draw();
     const peer = new Peer();
     let players = {}; 
     let connections = [];
-    let chatMessages = []; // Храним сообщения здесь
+    let chatMessages = []; 
     let myName = localStorage.getItem('mp-nick') || "Player_" + Math.floor(Math.random() * 999);
     let isTyping = false;
     let chatInputText = "";
@@ -416,7 +416,7 @@ draw();
         document.getElementById('n-in').oninput = (e) => { myName = e.target.value; localStorage.setItem('mp-nick', myName); };
     }
 
-    // 2. ЛОГИКА ВВОДА ТЕКСТА (ЧЕРЕЗ КЛАВИАТУРУ)
+    // 2. ЛОГИКА ВВОДА ТЕКСТА
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             if (!isTyping) {
@@ -429,6 +429,7 @@ draw();
                 if (chatInputText.trim()) {
                     const pkg = { type: 'chat', nick: myName, text: chatInputText };
                     addLocalMsg(myName, chatInputText);
+                    // Отправляем сообщение (хосту или игрокам)
                     connections.forEach(c => { if(c.open) c.send(pkg); });
                 }
                 isTyping = false;
@@ -439,20 +440,25 @@ draw();
             } else if (e.key.length === 1) {
                 chatInputText += e.key;
             }
-            e.preventDefault(); // Чтобы персонаж не прыгал при печати
+            e.preventDefault(); 
         }
     });
 
     function addLocalMsg(nick, text) {
         chatMessages.push({ nick, text, time: Date.now() });
-        if (chatMessages.length > 10) chatMessages.shift();
+        if (chatMessages.length > 8) chatMessages.shift();
     }
 
-    // 3. СЕТЬ
+    // 3. СЕТЬ (ИСПРАВЛЕННАЯ РЕТРАНСЛЯЦИЯ)
     peer.on('connection', c => setup(c, true));
+
     function setup(conn, isHost) {
         conn.on('open', () => {
             if (isHost) connections.push(conn);
+            
+            // Если мы зашли к хосту, нам нужно сохранить соединение, чтобы слать данные
+            if (!isHost) connections.push(conn);
+
             setInterval(() => {
                 if(conn.open) conn.send({
                     type: 'pos', id: peer.id, nick: myName,
@@ -463,49 +469,68 @@ draw();
                 });
             }, 30);
         });
+
         conn.on('data', data => {
             if (data.type === 'pos') {
                 players[data.id] = data;
-                if (isHost) connections.forEach(c => { if (c.open && c.peer !== data.id) c.send(data); });
+                // Хост рассылает позы всем
+                if (isHost) {
+                    connections.forEach(c => {
+                        if (c.open && c.peer !== data.id) c.send(data);
+                    });
+                }
             } else if (data.type === 'chat') {
                 addLocalMsg(data.nick, data.text);
-                if (isHost) connections.forEach(c => { if (c.open && c.peer !== conn.peer) c.send(data); });
+                // ИСПРАВЛЕНИЕ: Хост рассылает чат всем остальным
+                if (isHost) {
+                    connections.forEach(c => {
+                        if (c.open && c.peer !== conn.peer) c.send(data);
+                    });
+                }
             }
+        });
+        
+        conn.on('close', () => {
+            if (isHost) connections = connections.filter(c => c !== conn);
+            delete players[conn.peer];
         });
     }
 
-    // 4. ОТРИСОВКА (РИСУЕМ ЧАТ ПРЯМО НА CANVAS)
+    // 4. ОТРИСОВКА ЧАТА НА CANVAS
     function drawCanvasChat() {
         ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0); // Сбрасываем камеру, чтобы чат не уплывал
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         
-        // Рисуем сообщения (слева внизу)
-        ctx.font = "14px Arial";
+        ctx.font = "bold 14px Arial";
         chatMessages.forEach((msg, i) => {
-            const y = window.innerHeight - 60 - (chatMessages.length - i) * 20;
-            ctx.fillStyle = "rgba(0,0,0,0.5)";
-            ctx.fillRect(10, y - 14, 250, 18);
+            const y = window.innerHeight - 80 - (chatMessages.length - i) * 22;
+            // Подложка сообщения
+            ctx.fillStyle = "rgba(0,0,0,0.4)";
+            const textWidth = ctx.measureText(msg.nick + ": " + msg.text).width;
+            ctx.fillRect(10, y - 16, textWidth + 20, 22);
+            
             ctx.fillStyle = "#3498db";
             ctx.fillText(msg.nick + ": ", 15, y);
             ctx.fillStyle = "white";
             ctx.fillText(msg.text, 15 + ctx.measureText(msg.nick + ": ").width, y);
         });
 
-        // Рисуем строку ввода
         if (isTyping) {
             ctx.fillStyle = "rgba(0,0,0,0.8)";
-            ctx.fillRect(10, window.innerHeight - 40, 400, 30);
+            ctx.fillRect(10, window.innerHeight - 50, 450, 35);
             ctx.strokeStyle = "#3498db";
-            ctx.strokeRect(10, window.innerHeight - 40, 400, 30);
+            ctx.lineWidth = 2;
+            ctx.strokeRect(10, window.innerHeight - 50, 450, 35);
             ctx.fillStyle = "white";
-            ctx.fillText("Чат: " + chatInputText + "_", 20, window.innerHeight - 20);
+            ctx.fillText("> " + chatInputText + "_", 20, window.innerHeight - 27);
         }
         ctx.restore();
     }
 
+    // 5. ОТРИСОВКА ИГРОКОВ
     function drawRemote(p) {
         ctx.save();
-        if (p.ha) { // Хук
+        if (p.ha) { 
             ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.moveTo(p.x + 16 - camera.x, p.y + 16 - camera.y);
             ctx.lineTo(p.hx - camera.x, p.hy - camera.y); ctx.stroke();
@@ -513,7 +538,7 @@ draw();
         ctx.translate(p.x - camera.x, p.y - camera.y);
         ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
         ctx.fillText(p.nick || "Player", 16, -12);
-        const w = 33;
+        
         ctx.fillStyle = p.fc;
         [{x:7,y:28},{x:23,y:28}].forEach(pos=>{ctx.beginPath();ctx.arc(pos.x,pos.y,8,0,Math.PI*2);ctx.fill();});
         ctx.fillStyle = p.bc;
@@ -533,7 +558,7 @@ draw();
         const r = nRAF(cb);
         if (typeof gameActive !== 'undefined' && gameActive) {
             for (let id in players) { if (id !== peer.id) drawRemote(players[id]); }
-            drawCanvasChat(); // РИСУЕМ ЧАТ ПОВЕРХ ВСЕГО
+            drawCanvasChat();
         }
         return r;
     };
@@ -541,6 +566,7 @@ draw();
 </script>
 </body>
 </html>
+
 
 
 
