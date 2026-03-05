@@ -390,18 +390,19 @@ draw();
 (function() {
     const peer = new Peer();
     let players = {}; 
-    let connections = []; // Список всех подключений для хоста
+    let connections = []; // Список всех активных соединений (для Хоста)
 
+    // РИСУЕМ МЕНЮ
     const menu = document.querySelector('.menu-btns');
     if (menu) {
         const mpBox = document.createElement('div');
         mpBox.style = "margin-top:15px; background:#222; padding:15px; border-radius:12px; border:2px solid #3498db; color:white; width:280px; text-align:center;";
         mpBox.innerHTML = `
-            <div style="font-weight:bold; color:#3498db; margin-bottom:10px;">ПАРТИ (ВСЕ ВИДЯТ ВСЕХ)</div>
-            <div id="m-id" style="font-size:10px; color:#888; margin-bottom:5px; background:#111; padding:5px;">Загрузка ID...</div>
-            <button id="btn-copy" style="width:100%; margin-bottom:8px; cursor:pointer;">СКОПИРОВАТЬ ID</button>
-            <input type="text" id="t-id" placeholder="ID Хоста" style="width:100%; padding:5px; margin-bottom:5px; background:#111; color:white; border:1px solid #444;">
-            <button id="btn-join" style="width:100%; background:#2ecc71; color:white; border:none; padding:10px; cursor:pointer; font-weight:bold;">ЗАЙТИ К ХОСТУ</button>
+            <div style="font-weight:bold; color:#3498db; margin-bottom:10px;">МУЛЬТИПЛЕЕР: ЛОББИ</div>
+            <div id="m-id" style="font-size:10px; color:#888; margin-bottom:5px; background:#111; padding:5px; word-break:break-all;">Загрузка ID...</div>
+            <button id="btn-copy" style="width:100%; margin-bottom:8px; cursor:pointer; padding:5px;">КОПИРОВАТЬ МОЙ ID</button>
+            <input type="text" id="t-id" placeholder="ID ХОСТА (Лидера)" style="width:100%; padding:8px; margin-bottom:5px; background:#111; color:white; border:1px solid #444; box-sizing:border-box;">
+            <button id="btn-join" style="width:100%; background:#2ecc71; color:white; border:none; padding:10px; border-radius:5px; cursor:pointer; font-weight:bold;">ЗАЙТИ В ПАРТИ</button>
             <div id="mp-stat" style="font-size:10px; color:#aaa; margin-top:8px;">Игроков в сети: 1</div>
         `;
         menu.appendChild(mpBox);
@@ -409,9 +410,12 @@ draw();
         peer.on('open', id => document.getElementById('m-id').innerText = id);
         document.getElementById('btn-copy').onclick = () => {
             navigator.clipboard.writeText(document.getElementById('m-id').innerText);
-            alert("ID скопирован!");
+            alert("ID скопирован! Дай его всем друзьям.");
         };
-        document.getElementById('btn-join').onclick = () => setup(peer.connect(document.getElementById('t-id').value), false);
+        document.getElementById('btn-join').onclick = () => {
+            const conn = peer.connect(document.getElementById('t-id').value);
+            setup(conn, false);
+        };
     }
 
     peer.on('connection', conn => setup(conn, true));
@@ -419,7 +423,9 @@ draw();
     function setup(conn, isHost) {
         conn.on('open', () => {
             if (isHost) connections.push(conn);
+            updatePartyCount();
 
+            // Каждые 30мс отправляем свои данные
             setInterval(() => {
                 if(conn.open) {
                     conn.send({
@@ -436,10 +442,11 @@ draw();
 
         conn.on('data', data => {
             if (data.type === 'pos') {
-                players[data.id] = data;
-                if (data.m) window.map = data.m;
+                players[data.id] = data; // Обновляем данные игрока у себя
+                if (data.m) window.map = data.m; // Синхронизация карты от хоста
 
-                // ГЛАВНОЕ: Если я хост, я пересылаю полученные данные ВСЕМ остальным
+                // ЛОГИКА "ВИД ОТ КАЖДОГО":
+                // Если я Хост, я пересылаю полученные данные ВСЕМ остальным игрокам
                 if (isHost) {
                     connections.forEach(c => {
                         if (c.open && c.peer !== data.id) {
@@ -463,17 +470,21 @@ draw();
         document.getElementById('mp-stat').innerText = "Игроков в сети: " + count;
     }
 
-    function drawPartyMember(p) {
+    // ОТРИСОВКА (Копия твоего стиля)
+    function drawRemote(p) {
         ctx.save();
         ctx.translate(p.x - camera.x, p.y - camera.y);
         const w = 33, h = 33;
-        ctx.fillStyle = p.fc;
+        
+        ctx.fillStyle = p.fc; // Ноги
         [{x: 7, y: 28}, {x: 23, y: 28}].forEach(pos => {
             ctx.beginPath(); ctx.arc(pos.x, pos.y, 8, 0, Math.PI * 2); ctx.fill();
         });
-        ctx.fillStyle = p.bc;
+        
+        ctx.fillStyle = p.bc; // Тело
         ctx.beginPath(); ctx.arc(w/2, h/2 - 2, w/2, 0, Math.PI * 2); ctx.fill();
-        const eyeX = (p.vx || 0) * 1.5;
+        
+        const eyeX = (p.vx || 0) * 1.5; // Глаза
         ctx.fillStyle = 'white';
         ctx.beginPath(); ctx.arc(10+eyeX, 12, 6, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(24+eyeX, 12, 6, 0, Math.PI * 2); ctx.fill();
@@ -483,12 +494,13 @@ draw();
         ctx.restore();
     }
 
+    // Внедрение в игровой цикл
     const nativeRAF = window.requestAnimationFrame;
     window.requestAnimationFrame = function(callback) {
         const res = nativeRAF(callback);
         if (typeof gameActive !== 'undefined' && gameActive) {
             for (let id in players) {
-                if (id !== peer.id) drawPartyMember(players[id]);
+                if (id !== peer.id) drawRemote(players[id]);
             }
         }
         return res;
@@ -497,4 +509,5 @@ draw();
 </script>
 </body>
 </html>
+
 
