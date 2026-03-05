@@ -388,126 +388,121 @@ draw();
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script>
 (function() {
-    // Ждем полной загрузки игры, чтобы все переменные (tee, ctx, map) были доступны
-    window.addEventListener('load', () => {
-        
-        // Добавляем блок меню (Парти)
-        const menu = document.querySelector('.menu-btns');
-        if (menu && !document.getElementById('mp-block')) {
-            const mp = document.createElement('div');
-            mp.id = 'mp-block';
-            mp.style = "margin-top:15px; background:#222; padding:15px; border-radius:12px; border:1px solid #3498db; color:white; font-size:12px; width:300px; text-align:center;";
-            mp.innerHTML = `
-                <div style="font-weight:bold; color:#3498db; margin-bottom:10px;">МУЛЬТИПЛЕЕР (ЛОББИ)</div>
-                <div id="my-id-val" style="color:#888; margin-bottom:5px; font-family:monospace; background:#111; padding:5px; word-break:break-all;">Загрузка ID...</div>
-                <button id="copy-btn" style="width:100%; margin-bottom:10px; cursor:pointer; padding:5px;">КОПИРОВАТЬ МОЙ ID</button>
-                <input type="text" id="target-id" placeholder="ID друга" style="width:100%; padding:5px; margin-bottom:5px; box-sizing:border-box; background:#111; color:white; border:1px solid #444;">
-                <button id="conn-btn" style="width:100%; background:#2ecc71; color:white; border:none; padding:10px; border-radius:5px; cursor:pointer; font-weight:bold;">ПОДКЛЮЧИТЬСЯ</button>
-                <div id="mp-count" style="margin-top:5px; color:#aaa;">Игроков рядом: 1</div>
-            `;
-            menu.appendChild(mp);
-            
-            document.getElementById('copy-btn').onclick = () => {
-                const idText = document.getElementById('my-id-val').innerText;
-                navigator.clipboard.writeText(idText);
-                alert('ID скопирован!');
-            };
-        }
+    const menu = document.querySelector('.menu-btns');
+    if (menu && !document.getElementById('mp-block')) {
+        const mp = document.createElement('div');
+        mp.id = 'mp-block';
+        mp.style = "margin-top:15px; background:#222; padding:15px; border-radius:12px; border:1px solid #3498db; color:white; font-size:12px; width:300px; text-align:center;";
+        mp.innerHTML = `
+            <div id="my-id-val" style="color:#888; margin-bottom:5px; font-family:monospace; background:#111; padding:5px;">Загрузка ID...</div>
+            <button onclick="navigator.clipboard.writeText(document.getElementById('my-id-val').innerText); alert('ID скопирован!')" style="width:100%; margin-bottom:10px; cursor:pointer;">КОПИРОВАТЬ ID</button>
+            <input type="text" id="target-id" placeholder="ID друга" style="width:100%; padding:5px; margin-bottom:5px; box-sizing:border-box;">
+            <button id="conn-btn" style="width:100%; background:#2ecc71; color:white; border:none; padding:10px; cursor:pointer;">ПОДКЛЮЧИТЬСЯ</button>
+            <div id="mp-info" style="margin-top:5px; color:#aaa;">Игроков в лобби: 1</div>
+        `;
+        menu.appendChild(mp);
+    }
 
-        const peer = new Peer();
-        let connections = []; 
-        let players = {};      
+    const peer = new Peer();
+    let players = {}; // Тут храним ВСЕХ друзей
 
-        peer.on('open', id => { 
-            document.getElementById('my-id-val').innerText = id; 
-        });
+    peer.on('open', id => { document.getElementById('my-id-val').innerText = id; });
 
-        // Когда к нам заходят
-        peer.on('connection', conn => {
-            setupMPConn(conn, true);
-        });
-
-        // Когда мы заходим к кому-то
-        const connectBtn = document.getElementById('conn-btn');
-        if(connectBtn) {
-            connectBtn.onclick = () => {
-                const id = document.getElementById('target-id').value;
-                if(id) setupMPConn(peer.connect(id), false);
-            };
-        }
-
-        function setupMPConn(conn, isHost) {
-            conn.on('open', () => {
-                connections.push(conn);
-                document.getElementById('mp-count').innerText = "Игроков рядом: " + (connections.length + 1);
-
-                setInterval(() => {
-                    if (conn.open) {
-                        conn.send({
-                            id: peer.id,
-                            x: tee.x, y: tee.y, vx: tee.vx, vy: tee.vy,
-                            bc: document.getElementById('bodyColor').value,
-                            fc: document.getElementById('feetColor').value,
-                            m: (isHost && typeof map !== 'undefined') ? map : null
-                        });
-                    }
-                }, 30);
-            });
-
-            conn.on('data', data => {
-                if (data.m) window.map = data.m;
-                players[data.id] = data; 
-            });
-
-            conn.on('close', () => {
-                delete players[conn.peer];
-                connections = connections.filter(c => c !== conn);
-                document.getElementById('mp-count').innerText = "Игроков рядом: " + (connections.length + 1);
-            });
-        }
-
-        // РИСОВАНИЕ ДРУЗЕЙ (Копия твоего стиля)
-        function drawOther(p) {
-            if(!window.ctx) return;
-            ctx.save();
-            ctx.translate(p.x - camera.x, p.y - camera.y);
-            
-            const w = 34, h = 34;
-            // Ноги
-            ctx.fillStyle = p.fc;
-            [{x:7, y:32}, {x:23, y:32}].forEach(pos => {
-                ctx.beginPath(); ctx.arc(pos.x, pos.y, 8, 0, Math.PI*2); ctx.fill();
-            });
-            // Тело
-            ctx.fillStyle = p.bc;
-            ctx.beginPath();
-            ctx.arc(w/2, h/2 - 2, w/2, 0, Math.PI*2);
-            ctx.fill();
-            // Глаза
-            const look = (p.vx || 0) * 1.5;
-            ctx.fillStyle = 'white';
-            ctx.beginPath(); ctx.arc(10+look, 12, 6, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(24+look, 12, 6, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = 'black';
-            ctx.beginPath(); ctx.arc(11+look, 12, 3, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(25+look, 12, 3, 0, Math.PI*2); ctx.fill();
-            ctx.restore();
-        }
-
-        // Внедряем отрисовку без поломки основного цикла
-        const oldRAF = window.requestAnimationFrame;
-        window.requestAnimationFrame = function(cb) {
-            const res = oldRAF(cb);
-            if (typeof gameActive !== 'undefined' && gameActive) {
-                for (let id in players) {
-                    if (id !== peer.id) drawOther(players[id]);
-                }
-            }
-            return res;
-        };
+    // Обработка входящего подключения
+    peer.on('connection', conn => {
+        setupPlayer(conn, true);
     });
+
+    // Обработка исходящего подключения
+    document.getElementById('conn-btn').onclick = () => {
+        const id = document.getElementById('target-id').value;
+        const conn = peer.connect(id);
+        setupPlayer(conn, false);
+    };
+
+    function setupPlayer(conn, isHost) {
+        conn.on('open', () => {
+            // Запускаем отправку своих данных
+            setInterval(() => {
+                if (conn.open) {
+                    conn.send({
+                        id: peer.id,
+                        x: tee.x, y: tee.y, vx: tee.vx, vy: tee.vy,
+                        bc: document.getElementById('bodyColor').value,
+                        fc: document.getElementById('feetColor').value,
+                        m: isHost ? map : null
+                    });
+                }
+            }, 30);
+        });
+
+        conn.on('data', data => {
+            if (data.m) map = data.m;
+            // Добавляем или обновляем игрока в списке
+            players[data.id] = data;
+            updateCount();
+        });
+
+        conn.on('close', () => {
+            delete players[conn.peer];
+            updateCount();
+        });
+    }
+
+    function updateCount() {
+        document.getElementById('mp-info').innerText = "Игроков в лобби: " + (Object.keys(players).length + 1);
+    }
+
+    // ФУНКЦИЯ ОТРИСОВКИ (Копия твоего drawTee, но для друзей)
+    function drawRemotePlayer(p) {
+        ctx.save();
+        ctx.translate(p.x - camera.x, p.y - camera.y);
+        
+        const w = 34, h = 34; // Твои стандартные размеры из кода
+
+        // Ноги
+        ctx.fillStyle = p.fc || '#777';
+        [{x: 7, y: 32}, {x: 23, y: 32}].forEach(pos => {
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // Тело
+        ctx.fillStyle = p.bc || '#ccc';
+        ctx.beginPath();
+        // Используем круг, чтобы точно не было квадратов
+        ctx.arc(w/2, h/2 - 2, w/2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Глаза (поворачиваются за скоростью vx)
+        const eyeX = (p.vx || 0) * 1.5;
+        ctx.fillStyle = 'white';
+        ctx.beginPath(); ctx.arc(10 + eyeX, 12, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(24 + eyeX, 12, 6, 0, Math.PI * 2); ctx.fill();
+        
+        ctx.fillStyle = 'black';
+        ctx.beginPath(); ctx.arc(11 + eyeX, 12, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(25 + eyeX, 12, 3, 0, Math.PI * 2); ctx.fill();
+
+        ctx.restore();
+    }
+
+    // Внедряемся в отрисовку
+    const originalRAF = window.requestAnimationFrame;
+    window.requestAnimationFrame = function(callback) {
+        const res = originalRAF(callback);
+        if (gameActive) {
+            // Рисуем КАЖДОГО игрока из списка
+            for (let id in players) {
+                drawRemotePlayer(players[id]);
+            }
+        }
+        return res;
+    };
 })();
 </script>
 </body>
 </html>
+
 
