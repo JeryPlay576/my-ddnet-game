@@ -396,7 +396,7 @@ draw();
     let isTyping = false;
     let chatInputText = "";
 
-    // 1. ИНТЕРФЕЙС
+    // 1. UI
     const menu = document.querySelector('.menu-btns');
     if (menu) {
         const mpBox = document.createElement('div');
@@ -406,7 +406,7 @@ draw();
             <div id="m-id" style="font-size:10px; color:#888; margin-bottom:8px; word-break:break-all; background:#000; padding:5px; border-radius:5px;">Загрузка ID...</div>
             <button id="m-cp" style="width:100%; margin-bottom:10px; cursor:pointer; padding:5px;">КОПИРОВАТЬ ID</button>
             <input type="text" id="h-id" placeholder="ID ХОСТА" style="width:100%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444; border-radius:5px;">
-            <button id="m-jn" style="width:100%; background:#e67e22; color:white; border:none; padding:12px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%;">ПОДКЛЮЧИТЬСЯ К МИРУ</button>
+            <button id="m-jn" style="width:100%; background:#e67e22; color:white; border:none; padding:12px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%;">ЗАЙТИ В МИР ДРУГА</button>
         `;
         menu.appendChild(mpBox);
 
@@ -416,35 +416,38 @@ draw();
         document.getElementById('n-in').oninput = (e) => { myName = e.target.value; localStorage.setItem('mp-nick', myName); };
     }
 
-    // 2. ГЛУБОКАЯ ИНИЦИАЛИЗАЦИЯ (ФИКС ЧЕРНОГО ЭКРАНА)
+    // 2. ФУНКЦИЯ ПОЛНОГО ПРОБУЖДЕНИЯ МИРА
     function forceJoinWorld(remoteMap) {
-        console.log("Синхронизация мира...");
+        console.log("Синхронизация тайлов...");
         
-        // Передаем данные в глобальную переменную
+        // Ключевое действие: подменяем карту и заставляем движок её переварить
         window.map = remoteMap;
 
-        // Если в ddnet.html есть основная функция startGame, вызываем её
-        // В твоем коде startGame(map) должна сбрасывать персонажа и запускать циклы
+        // Имитируем логику startGame, если она есть
         if (typeof startGame === 'function') {
             startGame(remoteMap);
         } else {
-            // Если startGame недоступна напрямую, эмулируем логику загрузки
+            // Если startGame нет, вручную включаем всё
             window.gameActive = true;
             if (typeof tee !== 'undefined') {
-                tee.x = remoteMap.spawn ? remoteMap.spawn.x : 100;
-                tee.y = remoteMap.spawn ? remoteMap.spawn.y : 100;
-                tee.vx = 0; tee.vy = 0;
+                tee.x = remoteMap.spawn ? remoteMap.spawn.x : 200;
+                tee.y = remoteMap.spawn ? remoteMap.spawn.y : 200;
+                // Центрируем камеру, чтобы не было черного экрана из-за координат 0,0
+                if (typeof camera !== 'undefined') {
+                    camera.x = tee.x - (window.innerWidth / 2);
+                    camera.y = tee.y - (window.innerHeight / 2);
+                }
             }
         }
 
-        // ПРИНУДИТЕЛЬНО СКРЫВАЕМ МЕНЮ
-        const mainMenu = document.getElementById('main-menu');
-        if (mainMenu) mainMenu.style.display = 'none';
-
-        // Перерисовываем канвас (вызываем один кадр принудительно)
-        if (typeof requestAnimationFrame === 'function') {
-            addChatMessage("СИСТЕМА", "Мир загружен! Добро пожаловать.");
-        }
+        // Убираем меню
+        const menuOverlay = document.getElementById('main-menu');
+        if (menuOverlay) menuOverlay.style.display = 'none';
+        
+        // Маленький хак: если у тебя есть функция отрисовки, вызываем её принудительно один раз
+        if (typeof draw === 'function') draw();
+        
+        addChatMessage("СИСТЕМА", "Мир получен! Вы в игре.");
     }
 
     // 3. СЕТЬ
@@ -453,9 +456,14 @@ draw();
     function setup(conn, isHost) {
         conn.on('open', () => {
             connections.push(conn);
-            if (isHost && window.map) {
-                // Хост отправляет свою карту сразу
-                conn.send({ type: 'world_sync', mapData: window.map });
+            if (isHost) {
+                // ВАЖНО: Хост должен отправить карту ТОЛЬКО если он сам в игре
+                if (window.map && window.map.blocks) {
+                    conn.send({ type: 'world_sync', mapData: window.map });
+                } else {
+                    // Если хост в меню, шлем сигнал подождать
+                    conn.send({ type: 'chat', nick: "СИСТЕМА", text: "Хост еще не зашел в мир! Подождите." });
+                }
             }
 
             setInterval(() => {
@@ -473,7 +481,7 @@ draw();
 
         conn.on('data', data => {
             if (data.type === 'world_sync' && !isHost) {
-                // Сохраняем в системную ячейку и запускаем
+                // Сохраняем скрыто
                 localStorage.setItem('SYSTEM_MP_WORLD', JSON.stringify(data.mapData));
                 forceJoinWorld(data.mapData);
             }
@@ -485,18 +493,12 @@ draw();
                 if (isHost) connections.forEach(c => { if (c.open && c.peer !== conn.peer) c.send(data); });
             }
         });
-        
-        conn.on('close', () => {
-            connections = connections.filter(c => c !== conn);
-            delete players[conn.peer];
-        });
     }
 
-    // 4. ЧАТ И ОТРИСОВКА (без изменений)
+    // 4. ОТРИСОВКА И ЧАТ (без изменений)
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
-            const mMenu = document.getElementById('main-menu');
-            if (mMenu && mMenu.style.display !== 'none') return;
+            if (document.getElementById('main-menu').style.display !== 'none') return;
             if (!isTyping) { isTyping = true; chatInputText = ""; }
             else {
                 if (chatInputText.trim()) {
@@ -519,7 +521,7 @@ draw();
     }
 
     function drawChat() {
-        if (!ctx) return;
+        if (!window.ctx) return;
         ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); 
         ctx.font = "bold 14px Arial";
         chatMessages.forEach((m, i) => {
@@ -541,7 +543,7 @@ draw();
     }
 
     function drawRemote(p) {
-        if (!ctx) return;
+        if (!window.ctx) return;
         ctx.save();
         if (p.ha) { 
             ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
@@ -576,6 +578,7 @@ draw();
 </script>
 </body>
 </html>
+
 
 
 
