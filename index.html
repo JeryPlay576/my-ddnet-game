@@ -386,95 +386,70 @@ draw();
 })();
 </script>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-<style>
-    /* ПРИНУДИТЕЛЬНО ВЫВОДИМ ЧАТ НА ПЕРЕДНИЙ ПЛАН */
-    #mp-chat-wrap {
-        position: fixed; bottom: 20px; left: 20px; 
-        width: 300px; z-index: 9999; pointer-events: none;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    #mp-chat-log {
-        height: 160px; background: rgba(0, 0, 0, 0.6); 
-        color: white; padding: 10px; border-radius: 8px;
-        overflow-y: auto; display: flex; flex-direction: column;
-        gap: 4px; margin-bottom: 5px; border: 1px solid rgba(255,255,255,0.1);
-    }
-    #mp-chat-input {
-        width: 100%; padding: 10px; background: rgba(30, 30, 30, 0.95);
-        border: 2px solid #3498db; color: white; border-radius: 8px;
-        outline: none; pointer-events: auto; display: none; /* Скрыт по умолчанию */
-    }
-    .c-name { color: #3498db; font-weight: bold; }
-</style>
-
-<div id="mp-chat-wrap">
-    <div id="mp-chat-log"><div><i>Система: Нажми Enter, чтобы писать</i></div></div>
-    <input type="text" id="mp-chat-input" placeholder="Сообщение...">
-</div>
-
 <script>
 (function() {
     const peer = new Peer();
     let players = {}; 
     let connections = [];
+    let chatMessages = []; // Храним сообщения здесь
     let myName = localStorage.getItem('mp-nick') || "Player_" + Math.floor(Math.random() * 999);
+    let isTyping = false;
+    let chatInputText = "";
 
-    // 1. ИНТЕРФЕЙС В МЕНЮ
+    // 1. UI В МЕНЮ
     const menu = document.querySelector('.menu-btns');
     if (menu) {
         const mpBox = document.createElement('div');
-        mpBox.style = "margin-top:15px; background:#222; padding:15px; border-radius:12px; border:2px solid #3498db; color:white; width:280px; text-align:center; position:relative; z-index:101;";
+        mpBox.style = "margin-top:10px; background:#222; padding:15px; border-radius:12px; border:2px solid #3498db; color:white; width:280px; text-align:center; z-index:1001;";
         mpBox.innerHTML = `
-            <input type="text" id="nick-in" value="${myName}" placeholder="Твой ник" style="width:100%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444; border-radius:5px;">
-            <div id="my-id-box" style="font-size:10px; color:#888; margin-bottom:8px; background:#000; padding:5px; word-break:break-all;">Загрузка Peer ID...</div>
-            <button id="mp-copy" style="width:100%; margin-bottom:10px; cursor:pointer; padding:5px;">КОПИРОВАТЬ ID</button>
-            <input type="text" id="host-id" placeholder="ID ХОСТА" style="width:100%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444;">
-            <button id="mp-join" style="width:100%; background:#2ecc71; color:white; border:none; padding:10px; border-radius:5px; cursor:pointer; font-weight:bold;">ПОДКЛЮЧИТЬСЯ</button>
+            <input type="text" id="n-in" value="${myName}" placeholder="Ник" style="width:100%; padding:5px; margin-bottom:5px; background:#111; color:white; border:1px solid #444;">
+            <div id="m-id" style="font-size:10px; color:#888; margin-bottom:5px; word-break:break-all; background:#000; padding:5px;">Загрузка...</div>
+            <button id="m-cp" style="width:100%; margin-bottom:5px; cursor:pointer;">КОПИРОВАТЬ ID</button>
+            <input type="text" id="h-id" placeholder="ID ХОСТА" style="width:100%; padding:5px; margin-bottom:5px; background:#111; color:white; border:1px solid #444;">
+            <button id="m-jn" style="width:100%; background:#2ecc71; color:white; border:none; padding:10px; cursor:pointer; font-weight:bold; width:100%;">ЗАЙТИ В ПАРТИ</button>
         `;
         menu.appendChild(mpBox);
 
-        peer.on('open', id => { document.getElementById('my-id-box').innerText = id; });
-        document.getElementById('mp-copy').onclick = () => { navigator.clipboard.writeText(document.getElementById('my-id-box').innerText); alert("ID скопирован!"); };
-        document.getElementById('mp-join').onclick = () => { setup(peer.connect(document.getElementById('host-id').value), false); };
-        document.getElementById('nick-in').oninput = (e) => { myName = e.target.value; localStorage.setItem('mp-nick', myName); };
+        peer.on('open', id => { document.getElementById('m-id').innerText = id; });
+        document.getElementById('m-cp').onclick = () => { navigator.clipboard.writeText(document.getElementById('m-id').innerText); alert("ID в буфере!"); };
+        document.getElementById('m-jn').onclick = () => { setup(peer.connect(document.getElementById('h-id').value), false); };
+        document.getElementById('n-in').oninput = (e) => { myName = e.target.value; localStorage.setItem('mp-nick', myName); };
     }
 
-    // 2. РАБОТА ЧАТА
-    const cInput = document.getElementById('mp-chat-input');
-    const cLog = document.getElementById('mp-chat-log');
-
-    function addChat(nick, msg) {
-        const d = document.createElement('div');
-        d.innerHTML = `<span class="c-name">${nick}:</span> ${msg}`;
-        cLog.appendChild(d);
-        cLog.scrollTop = cLog.scrollHeight;
-    }
-
+    // 2. ЛОГИКА ВВОДА ТЕКСТА (ЧЕРЕЗ КЛАВИАТУРУ)
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
-            if (cInput.style.display === 'block') {
-                const text = cInput.value.trim();
-                if (text) {
-                    addChat(myName, text);
-                    const pkg = { type: 'chat', nick: myName, text: text };
-                    connections.forEach(c => { if(c.open) c.send(pkg); });
-                }
-                cInput.value = '';
-                cInput.style.display = 'none';
-            } else {
-                // Показываем чат только если меню закрыто (игра идет)
+            if (!isTyping) {
                 const mMenu = document.getElementById('main-menu');
                 if (mMenu && mMenu.style.display === 'none') {
-                    cInput.style.display = 'block';
-                    cInput.focus();
+                    isTyping = true;
+                    chatInputText = "";
                 }
+            } else {
+                if (chatInputText.trim()) {
+                    const pkg = { type: 'chat', nick: myName, text: chatInputText };
+                    addLocalMsg(myName, chatInputText);
+                    connections.forEach(c => { if(c.open) c.send(pkg); });
+                }
+                isTyping = false;
             }
+        } else if (isTyping) {
+            if (e.key === 'Backspace') {
+                chatInputText = chatInputText.slice(0, -1);
+            } else if (e.key.length === 1) {
+                chatInputText += e.key;
+            }
+            e.preventDefault(); // Чтобы персонаж не прыгал при печати
         }
     });
 
+    function addLocalMsg(nick, text) {
+        chatMessages.push({ nick, text, time: Date.now() });
+        if (chatMessages.length > 10) chatMessages.shift();
+    }
+
     // 3. СЕТЬ
     peer.on('connection', c => setup(c, true));
-
     function setup(conn, isHost) {
         conn.on('open', () => {
             if (isHost) connections.push(conn);
@@ -488,20 +463,46 @@ draw();
                 });
             }, 30);
         });
-
         conn.on('data', data => {
             if (data.type === 'pos') {
                 players[data.id] = data;
                 if (isHost) connections.forEach(c => { if (c.open && c.peer !== data.id) c.send(data); });
             } else if (data.type === 'chat') {
-                addChat(data.nick, data.text);
+                addLocalMsg(data.nick, data.text);
                 if (isHost) connections.forEach(c => { if (c.open && c.peer !== conn.peer) c.send(data); });
             }
         });
-        conn.on('close', () => { delete players[conn.peer]; });
     }
 
-    // 4. ОТРИСОВКА
+    // 4. ОТРИСОВКА (РИСУЕМ ЧАТ ПРЯМО НА CANVAS)
+    function drawCanvasChat() {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0); // Сбрасываем камеру, чтобы чат не уплывал
+        
+        // Рисуем сообщения (слева внизу)
+        ctx.font = "14px Arial";
+        chatMessages.forEach((msg, i) => {
+            const y = window.innerHeight - 60 - (chatMessages.length - i) * 20;
+            ctx.fillStyle = "rgba(0,0,0,0.5)";
+            ctx.fillRect(10, y - 14, 250, 18);
+            ctx.fillStyle = "#3498db";
+            ctx.fillText(msg.nick + ": ", 15, y);
+            ctx.fillStyle = "white";
+            ctx.fillText(msg.text, 15 + ctx.measureText(msg.nick + ": ").width, y);
+        });
+
+        // Рисуем строку ввода
+        if (isTyping) {
+            ctx.fillStyle = "rgba(0,0,0,0.8)";
+            ctx.fillRect(10, window.innerHeight - 40, 400, 30);
+            ctx.strokeStyle = "#3498db";
+            ctx.strokeRect(10, window.innerHeight - 40, 400, 30);
+            ctx.fillStyle = "white";
+            ctx.fillText("Чат: " + chatInputText + "_", 20, window.innerHeight - 20);
+        }
+        ctx.restore();
+    }
+
     function drawRemote(p) {
         ctx.save();
         if (p.ha) { // Хук
@@ -510,15 +511,13 @@ draw();
             ctx.lineTo(p.hx - camera.x, p.hy - camera.y); ctx.stroke();
         }
         ctx.translate(p.x - camera.x, p.y - camera.y);
-        // Ник
         ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
         ctx.fillText(p.nick || "Player", 16, -12);
-        // Тело
+        const w = 33;
         ctx.fillStyle = p.fc;
         [{x:7,y:28},{x:23,y:28}].forEach(pos=>{ctx.beginPath();ctx.arc(pos.x,pos.y,8,0,Math.PI*2);ctx.fill();});
         ctx.fillStyle = p.bc;
         ctx.beginPath();ctx.arc(16.5,14.5,16.5,0,Math.PI*2);ctx.fill();
-        // Глаза
         const ex = (p.vx || 0) * 1.5;
         ctx.fillStyle = 'white';
         ctx.beginPath();ctx.arc(10+ex,12,6,0,Math.PI*2);ctx.fill();
@@ -534,6 +533,7 @@ draw();
         const r = nRAF(cb);
         if (typeof gameActive !== 'undefined' && gameActive) {
             for (let id in players) { if (id !== peer.id) drawRemote(players[id]); }
+            drawCanvasChat(); // РИСУЕМ ЧАТ ПОВЕРХ ВСЕГО
         }
         return r;
     };
@@ -541,6 +541,7 @@ draw();
 </script>
 </body>
 </html>
+
 
 
 
