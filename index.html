@@ -387,13 +387,30 @@ draw();
 </script>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <style>
-    /* Стили для чата */
-    #chat-box { position: absolute; bottom: 20px; left: 20px; width: 250px; height: 150px; background: rgba(0,0,0,0.5); color: white; font-size: 12px; overflow-y: auto; padding: 10px; border-radius: 5px; pointer-events: none; display: none; }
-    #chat-input { position: absolute; bottom: 180px; left: 20px; width: 250px; background: rgba(0,0,0,0.8); border: 1px solid #3498db; color: white; padding: 5px; border-radius: 5px; display: none; }
+    /* Стили чата */
+    #chat-container {
+        position: absolute; bottom: 20px; left: 20px; width: 300px;
+        z-index: 1000; pointer-events: none;
+    }
+    #chat-messages {
+        height: 150px; background: rgba(0,0,0,0.4); color: white;
+        font-size: 13px; overflow-y: auto; padding: 10px;
+        border-radius: 8px; margin-bottom: 5px;
+        display: flex; flex-direction: column; gap: 4px;
+        text-shadow: 1px 1px 1px black;
+    }
+    #chat-input {
+        width: 100%; background: rgba(20,20,20,0.9); border: 2px solid #3498db;
+        color: white; padding: 8px; border-radius: 8px;
+        outline: none; pointer-events: auto; display: none;
+    }
+    .chat-msg b { color: #3498db; }
 </style>
 
-<div id="chat-box"></div>
-<input type="text" id="chat-input" placeholder="Нажми Enter чтобы отправить...">
+<div id="chat-container">
+    <div id="chat-messages" style="display: none;"></div>
+    <input type="text" id="chat-input" placeholder="Введите сообщение...">
+</div>
 
 <script>
 (function() {
@@ -402,62 +419,65 @@ draw();
     let connections = [];
     let myName = "Player_" + Math.floor(Math.random() * 999);
 
-    // 1. ИНТЕРФЕЙС
+    // 1. ИНТЕРФЕЙС В МЕНЮ
     const menu = document.querySelector('.menu-btns');
     if (menu) {
         const mpBox = document.createElement('div');
         mpBox.style = "margin-top:15px; background:#222; padding:15px; border-radius:12px; border:2px solid #3498db; color:white; width:280px; text-align:center;";
         mpBox.innerHTML = `
-            <input type="text" id="nick-input" placeholder="Твой ник" style="width:100%; padding:5px; margin-bottom:5px; background:#111; color:white; border:1px solid #444;">
-            <div id="m-id" style="font-size:10px; color:#888; margin-bottom:5px; background:#111; padding:5px; word-break:break-all;">Загрузка...</div>
-            <button id="btn-copy" style="width:100%; margin-bottom:8px; cursor:pointer;">ID КОПИРОВАТЬ</button>
-            <input type="text" id="t-id" placeholder="ID Хоста" style="width:100%; padding:5px; margin-bottom:5px; background:#111; color:white; border:1px solid #444;">
-            <button id="btn-join" style="width:100%; background:#2ecc71; color:white; border:none; padding:10px; cursor:pointer; font-weight:bold;">ЗАЙТИ В ПАРТИ</button>
+            <input type="text" id="nick-input" placeholder="Ваш Ник" style="width:100%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444; border-radius:5px;">
+            <div id="m-id" style="font-size:10px; color:#888; margin-bottom:8px; background:#111; padding:5px; word-break:break-all; border-radius:5px;">Загрузка ID...</div>
+            <button id="btn-copy" style="width:100%; margin-bottom:10px; cursor:pointer; padding:8px; border-radius:5px;">КОПИРОВАТЬ ID</button>
+            <input type="text" id="t-id" placeholder="ID ХОСТА" style="width:100%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444; border-radius:5px;">
+            <button id="btn-join" style="width:100%; background:#2ecc71; color:white; border:none; padding:12px; border-radius:5px; cursor:pointer; font-weight:bold;">ЗАЙТИ В ПАРТИ</button>
         `;
         menu.appendChild(mpBox);
 
         peer.on('open', id => { document.getElementById('m-id').innerText = id; });
-        document.getElementById('btn-copy').onclick = () => { navigator.clipboard.writeText(document.getElementById('m-id').innerText); alert("ID готов!"); };
+        document.getElementById('btn-copy').onclick = () => { 
+            navigator.clipboard.writeText(document.getElementById('m-id').innerText); 
+            alert("ID скопирован!"); 
+        };
         document.getElementById('btn-join').onclick = () => setup(peer.connect(document.getElementById('t-id').value), false);
-        document.getElementById('nick-input').onchange = (e) => { myName = e.target.value; };
+        document.getElementById('nick-input').onchange = (e) => { myName = e.target.value || "Player"; };
     }
 
-    // 2. ЧАТ (Логика Enter)
+    // 2. ЛОГИКА ЧАТА
     const chatInput = document.getElementById('chat-input');
-    const chatBox = document.getElementById('chat-box');
-    
+    const chatMessages = document.getElementById('chat-messages');
+
+    function addMessage(nick, text) {
+        chatMessages.style.display = 'flex';
+        const msg = document.createElement('div');
+        msg.className = 'chat-msg';
+        msg.innerHTML = `<b>${nick}:</b> ${text}`;
+        chatMessages.appendChild(msg);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        // Авто-скрытие через 10 секунд для красоты
+        setTimeout(() => { if(chatMessages.children.length > 5) msg.style.opacity = '0.5'; }, 10000);
+    }
+
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             if (chatInput.style.display === 'block') {
-                const msg = chatInput.value;
-                if (msg) {
-                    sendToAll({ type: 'chat', nick: myName, text: msg });
-                    addChatMessage(myName, msg);
+                const text = chatInput.value.trim();
+                if (text) {
+                    addMessage(myName, text);
+                    // Рассылаем всем
+                    const packet = { type: 'chat', nick: myName, text: text };
+                    connections.forEach(c => { if(c.open) c.send(packet); });
                 }
                 chatInput.value = '';
                 chatInput.style.display = 'none';
                 chatInput.blur();
             } else if (typeof gameActive !== 'undefined' && gameActive) {
                 chatInput.style.display = 'block';
-                chatBox.style.display = 'block';
                 chatInput.focus();
             }
         }
     });
 
-    function addChatMessage(nick, text) {
-        chatBox.style.display = 'block';
-        const div = document.createElement('div');
-        div.innerHTML = `<b>${nick}:</b> ${text}`;
-        chatBox.appendChild(div);
-        chatBox.scrollTop = chatBox.scrollHeight;
-    }
-
-    function sendToAll(data) {
-        connections.forEach(c => { if(c.open) c.send(data); });
-    }
-
-    // 3. СЕТЕВАЯ ЛОГИКА
+    // 3. СЕТЕВАЯ ЧАСТЬ
     peer.on('connection', conn => setup(conn, true));
 
     function setup(conn, isHost) {
@@ -470,9 +490,7 @@ draw();
                         x: tee.x, y: tee.y, vx: tee.vx,
                         bc: document.getElementById('bodyColor').value,
                         fc: document.getElementById('feetColor').value,
-                        // Передаем хук!
-                        hx: tee.hook.x, hy: tee.hook.y, ha: tee.hook.active,
-                        m: isHost ? (window.map || null) : null
+                        hx: tee.hook.x, hy: tee.hook.y, ha: tee.hook.active
                     });
                 }
             }, 30);
@@ -481,25 +499,25 @@ draw();
         conn.on('data', data => {
             if (data.type === 'pos') {
                 players[data.id] = data;
-                if (data.m) window.map = data.m;
-                if (isHost) { // Ретрансляция
+                if (isHost) { // Ретрансляция хостом всем остальным
                     connections.forEach(c => { if (c.open && c.peer !== data.id) c.send(data); });
                 }
             } else if (data.type === 'chat') {
-                addChatMessage(data.nick, data.text);
-                if (isHost) sendToAll(data);
+                addMessage(data.nick, data.text);
+                if (isHost) { // Хост пересылает сообщение всем остальным
+                    connections.forEach(c => { if (c.open && c.peer !== conn.peer) c.send(data); });
+                }
             }
         });
+        conn.on('close', () => { delete players[conn.peer]; });
     }
 
-    // 4. ОТРИСОВКА ВСЕГО
+    // 4. ОТРИСОВКА ИГРОКОВ
     function drawRemote(p) {
         ctx.save();
-        
-        // РИСУЕМ ХУК ДРУГА
+        // Рисуем хук
         if (p.ha) {
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.moveTo(p.x + 16 - camera.x, p.y + 16 - camera.y);
             ctx.lineTo(p.hx - camera.x, p.hy - camera.y);
@@ -508,19 +526,18 @@ draw();
 
         ctx.translate(p.x - camera.x, p.y - camera.y);
         
-        // НИК НАД ГОЛОВОЙ
-        ctx.fillStyle = "white";
-        ctx.font = "10px Arial";
+        // Ник над головой
+        ctx.fillStyle = "white"; ctx.font = "bold 12px Arial";
         ctx.textAlign = "center";
-        ctx.fillText(p.nick || "Player", 16, -10);
+        ctx.fillText(p.nick || "Player", 16, -12);
 
-        // ТЕЛО И НОГИ (Твой стиль)
+        // Персонаж
+        const w = 33, h = 33;
         ctx.fillStyle = p.fc;
         [{x:7, y:28}, {x:23, y:28}].forEach(pos => { ctx.beginPath(); ctx.arc(pos.x, pos.y, 8, 0, Math.PI*2); ctx.fill(); });
         ctx.fillStyle = p.bc;
         ctx.beginPath(); ctx.arc(16.5, 14.5, 16.5, 0, Math.PI*2); ctx.fill();
         
-        // ГЛАЗА
         const eyeX = (p.vx || 0) * 1.5;
         ctx.fillStyle = 'white';
         ctx.beginPath(); ctx.arc(10+eyeX, 12, 6, 0, Math.PI*2); ctx.fill();
@@ -528,7 +545,6 @@ draw();
         ctx.fillStyle = 'black';
         ctx.beginPath(); ctx.arc(11+eyeX, 12, 3, 0, Math.PI*2); ctx.fill();
         ctx.beginPath(); ctx.arc(25+eyeX, 12, 3, 0, Math.PI*2); ctx.fill();
-        
         ctx.restore();
     }
 
@@ -544,6 +560,7 @@ draw();
 </script>
 </body>
 </html>
+
 
 
 
