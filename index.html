@@ -396,7 +396,7 @@ draw();
     let isTyping = false;
     let chatInputText = "";
 
-    // 1. UI
+    // 1. ИНТЕРФЕЙС
     const menu = document.querySelector('.menu-btns');
     if (menu) {
         const mpBox = document.createElement('div');
@@ -416,54 +416,38 @@ draw();
         document.getElementById('n-in').oninput = (e) => { myName = e.target.value; localStorage.setItem('mp-nick', myName); };
     }
 
-    // 2. ФУНКЦИЯ ПОЛНОГО ПРОБУЖДЕНИЯ МИРА
+    // 2. ФУНКЦИЯ ВХОДА ЧЕРЕЗ СТАНДАРТНУЮ ЗАГРУЗКУ
     function forceJoinWorld(remoteMap) {
-        console.log("Синхронизация тайлов...");
+        console.log("Принудительный запуск через слот...");
         
-        // Ключевое действие: подменяем карту и заставляем движок её переварить
-        window.map = remoteMap;
-
-        // Имитируем логику startGame, если она есть
-        if (typeof startGame === 'function') {
+        // Записываем карту хоста в специальный слот в localStorage
+        localStorage.setItem('map_slot_SYSTEM_MP', JSON.stringify(remoteMap));
+        
+        // Пытаемся вызвать стандартную функцию загрузки из твоего основного кода
+        // В большинстве твоих версий она называется loadGame
+        if (typeof loadGame === 'function') {
+            loadGame('SYSTEM_MP'); 
+        } else if (typeof startGame === 'function') {
             startGame(remoteMap);
         } else {
-            // Если startGame нет, вручную включаем всё
+            // Если функции недоступны, просто делаем "жесткую" активацию
+            window.map = remoteMap;
             window.gameActive = true;
-            if (typeof tee !== 'undefined') {
-                tee.x = remoteMap.spawn ? remoteMap.spawn.x : 200;
-                tee.y = remoteMap.spawn ? remoteMap.spawn.y : 200;
-                // Центрируем камеру, чтобы не было черного экрана из-за координат 0,0
-                if (typeof camera !== 'undefined') {
-                    camera.x = tee.x - (window.innerWidth / 2);
-                    camera.y = tee.y - (window.innerHeight / 2);
-                }
-            }
+            document.getElementById('main-menu').style.display = 'none';
         }
-
-        // Убираем меню
-        const menuOverlay = document.getElementById('main-menu');
-        if (menuOverlay) menuOverlay.style.display = 'none';
         
-        // Маленький хак: если у тебя есть функция отрисовки, вызываем её принудительно один раз
-        if (typeof draw === 'function') draw();
-        
-        addChatMessage("СИСТЕМА", "Мир получен! Вы в игре.");
+        addChatMessage("СИСТЕМА", "Мир синхронизирован!");
     }
 
-    // 3. СЕТЬ
+    // 3. СЕТЕВАЯ ЛОГИКА
     peer.on('connection', c => setup(c, true));
 
     function setup(conn, isHost) {
         conn.on('open', () => {
             connections.push(conn);
-            if (isHost) {
-                // ВАЖНО: Хост должен отправить карту ТОЛЬКО если он сам в игре
-                if (window.map && window.map.blocks) {
-                    conn.send({ type: 'world_sync', mapData: window.map });
-                } else {
-                    // Если хост в меню, шлем сигнал подождать
-                    conn.send({ type: 'chat', nick: "СИСТЕМА", text: "Хост еще не зашел в мир! Подождите." });
-                }
+            if (isHost && window.map) {
+                // Хост отправляет карту
+                conn.send({ type: 'world_sync', mapData: window.map });
             }
 
             setInterval(() => {
@@ -481,8 +465,6 @@ draw();
 
         conn.on('data', data => {
             if (data.type === 'world_sync' && !isHost) {
-                // Сохраняем скрыто
-                localStorage.setItem('SYSTEM_MP_WORLD', JSON.stringify(data.mapData));
                 forceJoinWorld(data.mapData);
             }
             if (data.type === 'pos') {
@@ -495,10 +477,11 @@ draw();
         });
     }
 
-    // 4. ОТРИСОВКА И ЧАТ (без изменений)
+    // 4. ОТРИСОВКА И ЧАТ (СТАНДАРТ)
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
-            if (document.getElementById('main-menu').style.display !== 'none') return;
+            const mMenu = document.getElementById('main-menu');
+            if (mMenu && mMenu.style.display !== 'none') return;
             if (!isTyping) { isTyping = true; chatInputText = ""; }
             else {
                 if (chatInputText.trim()) {
@@ -521,7 +504,7 @@ draw();
     }
 
     function drawChat() {
-        if (!window.ctx) return;
+        if (typeof ctx === 'undefined') return;
         ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); 
         ctx.font = "bold 14px Arial";
         chatMessages.forEach((m, i) => {
@@ -543,7 +526,7 @@ draw();
     }
 
     function drawRemote(p) {
-        if (!window.ctx) return;
+        if (typeof ctx === 'undefined') return;
         ctx.save();
         if (p.ha) { 
             ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
@@ -578,6 +561,7 @@ draw();
 </script>
 </body>
 </html>
+
 
 
 
