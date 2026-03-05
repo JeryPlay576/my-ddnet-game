@@ -406,7 +406,7 @@ draw();
             <div id="m-id" style="font-size:10px; color:#888; margin-bottom:8px; word-break:break-all; background:#000; padding:5px; border-radius:5px;">Загрузка ID...</div>
             <button id="m-cp" style="width:100%; margin-bottom:10px; cursor:pointer; padding:5px;">КОПИРОВАТЬ ID</button>
             <input type="text" id="h-id" placeholder="ID ХОСТА" style="width:100%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444; border-radius:5px;">
-            <button id="m-jn" style="width:100%; background:#e67e22; color:white; border:none; padding:12px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%;">ПОДКЛЮЧИТЬСЯ К МИРУ</button>
+            <button id="m-jn" style="width:100%; background:#e67e22; color:white; border:none; padding:12px; border-radius:5px; cursor:pointer; font-weight:bold; width:100%;">ЗАЙТИ В МИР ДРУГА</button>
         `;
         menu.appendChild(mpBox);
 
@@ -416,17 +416,47 @@ draw();
         document.getElementById('n-in').oninput = (e) => { myName = e.target.value; localStorage.setItem('mp-nick', myName); };
     }
 
-    // 2. ЛОГИКА СЕТИ
+    // ФУНКЦИЯ ПРИНУДИТЕЛЬНОГО ЗАПУСКА ДЛЯ ГОСТЯ
+    function forceStartGame(receivedMap) {
+        console.log("Запуск мира хоста...");
+        
+        // Передаем карту в глобальную переменную
+        window.map = receivedMap;
+        
+        // Скрываем главное меню (учитываем ID из твоего HTML)
+        const menuOverlay = document.getElementById('main-menu');
+        if (menuOverlay) menuOverlay.style.display = 'none';
+        
+        // Если в твоем коде используется переменная gameActive
+        window.gameActive = true;
+        
+        // Если персонаж еще не создан или не сброшен, сбрасываем его позицию
+        if (typeof tee !== 'undefined') {
+            tee.x = receivedMap.spawn?.x || 100;
+            tee.y = receivedMap.spawn?.y || 100;
+            tee.vx = 0; tee.vy = 0;
+        }
+
+        // Вызываем твою оригинальную функцию старта, если она доступна
+        if (typeof startGame === 'function') {
+            startGame(receivedMap);
+        }
+    }
+
+    // 2. СЕТЬ
     peer.on('connection', c => setup(c, true));
 
     function setup(conn, isHost) {
         conn.on('open', () => {
             connections.push(conn);
             
-            // Если мы Хост — мгновенно шлем карту
+            // Хост отправляет карту гостю
             if (isHost) {
-                console.log("Отправка мира игроку...");
-                conn.send({ type: 'world_sync', mapData: window.map });
+                if (window.map) {
+                    conn.send({ type: 'world_sync', mapData: window.map });
+                } else {
+                    addChatMessage("ОШИБКА", "Вы должны быть в игре, чтобы пригласить друга!");
+                }
             }
 
             setInterval(() => {
@@ -441,30 +471,10 @@ draw();
         });
 
         conn.on('data', data => {
-            // АВТОМАТИЧЕСКИЙ ВХОД ДЛЯ ГОСТЯ
             if (data.type === 'world_sync' && !isHost) {
-                console.log("Мир получен! Синхронизация...");
-                
-                // 1. Сохраняем в системную ячейку
+                // СОХРАНЯЕМ В ОТДЕЛЬНУЮ ЯЧЕЙКУ И ЗАПУСКАЕМ
                 localStorage.setItem('SYSTEM_MP_WORLD', JSON.stringify(data.mapData));
-                
-                // 2. Обновляем глобальную переменную карты
-                window.map = data.mapData;
-
-                // 3. Эмулируем выбор слота и старт игры
-                setTimeout(() => {
-                    const menu = document.getElementById('main-menu');
-                    if (menu) menu.style.display = 'none';
-                    
-                    // Если у тебя в коде есть startGame, вызываем её
-                    if (typeof startGame === 'function') {
-                        startGame(data.mapData);
-                    } else {
-                        // Если нет, просто активируем флаг игры (зависит от твоей структуры)
-                        window.gameActive = true;
-                    }
-                    addChatMessage("СИСТЕМА", "Вы успешно вошли в мир друга!");
-                }, 500); 
+                forceStartGame(data.mapData);
             }
 
             if (data.type === 'pos') {
@@ -475,12 +485,18 @@ draw();
                 if (isHost) connections.forEach(c => { if (c.open && c.peer !== conn.peer) c.send(data); });
             }
         });
+        
+        conn.on('close', () => {
+            connections = connections.filter(c => c !== conn);
+            delete players[conn.peer];
+        });
     }
 
-    // 3. ОТРИСОВКА И ЧАТ (Без изменений)
+    // 3. ОТРИСОВКА ЧАТА И ИГРОКОВ (без изменений)
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
-            if (document.getElementById('main-menu').style.display !== 'none') return;
+            const mMenu = document.getElementById('main-menu');
+            if (mMenu && mMenu.style.display !== 'none') return;
             if (!isTyping) { isTyping = true; chatInputText = ""; }
             else {
                 if (chatInputText.trim()) {
@@ -558,6 +574,7 @@ draw();
 </script>
 </body>
 </html>
+
 
 
 
