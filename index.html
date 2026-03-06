@@ -388,94 +388,86 @@ draw();
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script>
 (function() {
-    const peer = new Peer();
+    let peer = new Peer();
     let players = {}; 
     let connections = [];
-    let chatMessages = [{ nick: "СИСТЕМА", text: "Ожидание подключения...", isSystem: true }]; 
+    let chatMessages = [{ nick: "СИСТЕМА", text: "Скрипт готов. Введите ID друга." }]; 
     let myName = localStorage.getItem('mp-nick') || "Player_" + Math.floor(Math.random() * 999);
 
     // 1. ИНТЕРФЕЙС
     const menuBtns = document.querySelector('.menu-btns');
     if (menuBtns) {
         const mpBox = document.createElement('div');
-        mpBox.style = "margin-top:10px; background:#222; padding:15px; border-radius:12px; border:2px solid #3498db; color:white; width:280px; text-align:center; position:relative; z-index:9999;";
+        mpBox.style = "margin-top:10px; background:#222; padding:15px; border-radius:12px; border:2px solid #3498db; color:white; width:280px; text-align:center; z-index:10000; box-shadow: 0 4px 15px rgba(0,0,0,0.5);";
         mpBox.innerHTML = `
-            <input type="text" id="n-in" value="${myName}" placeholder="Ник" style="width:90%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444; border-radius:5px;">
+            <input type="text" id="n-in" value="${myName}" placeholder="Ваш Ник" style="width:90%; padding:8px; margin-bottom:10px; background:#111; color:white; border:1px solid #444; border-radius:5px;">
             <div style="font-size:10px; color:#888; margin-bottom:4px;">ВАШ ID (нажмите чтобы скопировать):</div>
-            <div id="m-id" style="font-size:11px; color:#2ecc71; margin-bottom:10px; background:#000; padding:8px; word-break:break-all; cursor:pointer; border:1px dashed #2ecc71; border-radius:5px;">Загрузка ID...</div>
-            <input type="text" id="h-id" placeholder="ID ХОСТА" style="width:90%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444; border-radius:5px;">
-            <button id="m-jn" style="width:100%; background:#e67e22; color:white; border:none; padding:12px; cursor:pointer; font-weight:bold; border-radius:5px; transition:0.2s;">ЗАЙТИ В МИР ДРУГА</button>
+            <div id="m-id" style="font-size:11px; color:#2ecc71; margin-bottom:10px; background:#000; padding:8px; word-break:break-all; cursor:pointer; border:1px dashed #2ecc71; border-radius:5px;">Инициализация...</div>
+            <input type="text" id="h-id" placeholder="ID ХОСТА (ДРУГА)" style="width:90%; padding:8px; margin-bottom:10px; background:#111; color:white; border:1px solid #444; border-radius:5px;">
+            <button id="m-jn" style="width:100%; background:#e67e22; color:white; border:none; padding:12px; cursor:pointer; font-weight:bold; border-radius:5px; text-transform:uppercase;">Подключиться</button>
+            <div id="conn-status" style="font-size:10px; margin-top:8px; color:#aaa;">Статус: Ожидание</div>
         `;
         menuBtns.appendChild(mpBox);
 
-        // Кнопка копирования ID
         const idDisplay = document.getElementById('m-id');
-        peer.on('open', id => { idDisplay.innerText = id; });
+        const statusDisplay = document.getElementById('conn-status');
+
+        peer.on('open', id => { idDisplay.innerText = id; statusDisplay.innerText = "Статус: Готов"; });
+        
+        // Копирование по клику
         idDisplay.onclick = () => {
             navigator.clipboard.writeText(idDisplay.innerText);
-            const oldText = idDisplay.innerText;
             idDisplay.innerText = "СКОПИРОВАНО!";
-            idDisplay.style.color = "white";
-            setTimeout(() => { 
-                idDisplay.innerText = oldText; 
-                idDisplay.style.color = "#2ecc71";
-            }, 1000);
+            setTimeout(() => { idDisplay.innerText = peer.id; }, 1000);
         };
 
+        // Кнопка входа
         document.getElementById('m-jn').onclick = () => {
             const hostId = document.getElementById('h-id').value.trim();
-            if(hostId) setup(peer.connect(hostId), false);
+            if(!hostId) return alert("Введите ID!");
+            statusDisplay.innerText = "Статус: Соединение...";
+            statusDisplay.style.color = "#f1c40f";
+            
+            const conn = peer.connect(hostId, { reliable: true });
+            setup(conn, false);
         };
+
         document.getElementById('n-in').oninput = (e) => { myName = e.target.value; localStorage.setItem('mp-nick', myName); };
     }
 
-    // 2. СИСТЕМНАЯ ЯЧЕЙКА И ЗАПУСК
-    function forceJoinMPWorld(remoteMap) {
-        console.log("Получена карта! Сохраняю в системную ячейку...");
-        
-        // Создаем отдельную ячейку в памяти, не трогая обычные сохранения
-        localStorage.setItem('SYSTEM_MP_WORLD', JSON.stringify(remoteMap));
-        
-        // Передаем данные напрямую в движок
-        window.map = JSON.parse(JSON.stringify(remoteMap));
-
-        // Если есть массив блоков, подменяем его
-        if (window.blocks && Array.isArray(window.blocks)) {
-            window.blocks.length = 0;
-            remoteMap.blocks.forEach(b => window.blocks.push(b));
+    // Обработка ошибок PeerJS
+    peer.on('error', err => {
+        console.error(err);
+        const statusDisplay = document.getElementById('conn-status');
+        if(statusDisplay) {
+            statusDisplay.innerText = "Ошибка: " + err.type;
+            statusDisplay.style.color = "#e74c3c";
         }
+    });
 
-        // Телепортация игрока на спавн хоста
-        if (typeof tee !== 'undefined') {
-            tee.x = remoteMap.spawn ? remoteMap.spawn.x : 200;
-            tee.y = remoteMap.spawn ? remoteMap.spawn.y : 200;
-            if (typeof camera !== 'undefined') {
-                camera.x = tee.x - (window.innerWidth / 2);
-                camera.y = tee.y - (window.innerHeight / 2);
-            }
-        }
-
-        // Активация игры
-        const mm = document.getElementById('main-menu');
-        if (mm) mm.style.display = 'none';
-        window.gameActive = true;
-        
-        addChatMessage("СИСТЕМА", "Мир друга загружен в системную ячейку!");
-    }
-
-    // 3. СЕТЕВАЯ ЛОГИКА
-    peer.on('connection', c => setup(c, true));
+    // 2. СЕТЕВАЯ ЛОГИКА
+    peer.on('connection', c => {
+        const statusDisplay = document.getElementById('conn-status');
+        if(statusDisplay) statusDisplay.innerText = "Статус: Кто-то заходит...";
+        setup(c, true);
+    });
 
     function setup(conn, isHost) {
         conn.on('open', () => {
             connections.push(conn);
-            // Хост сразу передает мир
+            const statusDisplay = document.getElementById('conn-status');
+            if(statusDisplay) {
+                statusDisplay.innerText = "Статус: Соединено!";
+                statusDisplay.style.color = "#2ecc71";
+            }
+
+            // Хост шлет мир
             if (isHost && window.map) {
                 conn.send({ type: 'world_sync', mapData: window.map });
             }
             
-            // Цикл отправки позиции
-            setInterval(() => {
+            // Пакеты позиции
+            const posInterval = setInterval(() => {
                 if(conn.open && typeof tee !== 'undefined') {
                     conn.send({
                         type: 'pos', id: peer.id, nick: myName,
@@ -484,65 +476,79 @@ draw();
                         fc: document.getElementById('feetColor')?.value || "#ffffff",
                         hx: tee.hook.x, hy: tee.hook.y, ha: tee.hook.active
                     });
+                } else if(!conn.open) {
+                    clearInterval(posInterval);
                 }
             }, 30);
         });
 
         conn.on('data', data => {
             if (data.type === 'world_sync') {
-                forceJoinMPWorld(data.mapData);
+                console.log("Карта получена, запуск...");
+                localStorage.setItem('SYSTEM_MP_WORLD', JSON.stringify(data.mapData));
+                window.map = data.mapData;
+                
+                // Принудительно очищаем и заполняем блоки, если они есть
+                if (window.blocks) {
+                    window.blocks.length = 0;
+                    data.mapData.blocks.forEach(b => window.blocks.push(b));
+                }
+
+                // Входим
+                if (typeof tee !== 'undefined') {
+                    tee.x = data.mapData.spawn?.x || 200;
+                    tee.y = data.mapData.spawn?.y || 200;
+                }
+                document.getElementById('main-menu').style.display = 'none';
+                window.gameActive = true;
             }
+            
             if (data.type === 'pos') {
                 players[data.id] = data;
-                if (isHost) connections.forEach(c => { if (c.open && c.peer !== data.id) c.send(data); });
-            } else if (data.type === 'chat') {
-                addChatMessage(data.nick, data.text);
+                if (isHost) {
+                    connections.forEach(c => { if (c.open && c.peer !== data.id) c.send(data); });
+                }
             }
+        });
+
+        conn.on('close', () => {
+            const statusDisplay = document.getElementById('conn-status');
+            if(statusDisplay) statusDisplay.innerText = "Статус: Отключено";
+            connections = connections.filter(c => c !== conn);
         });
     }
 
-    // 4. ОБРАБОТКА И ОТРИСОВКА
-    function addChatMessage(nick, text) {
-        chatMessages.push({ nick, text });
-        if (chatMessages.length > 5) chatMessages.shift();
-    }
-
+    // 3. ОТРИСОВКА
     const nRAF = window.requestAnimationFrame;
     window.requestAnimationFrame = function(cb) {
         const r = nRAF(cb);
         if (window.gameActive && typeof ctx !== 'undefined') {
             for (let id in players) { 
-                if (id !== peer.id) drawRemotePlayer(players[id]);
+                if (id !== peer.id) {
+                    const p = players[id];
+                    ctx.save();
+                    // Хук
+                    if (p.ha) {
+                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+                        ctx.beginPath(); ctx.moveTo(p.x + 16 - camera.x, p.y + 16 - camera.y);
+                        ctx.lineTo(p.hx - camera.x, p.hy - camera.y); ctx.stroke();
+                    }
+                    // Игрок
+                    ctx.translate(p.x - camera.x, p.y - camera.y);
+                    ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
+                    ctx.fillText(p.nick, 16, -10);
+                    ctx.fillStyle = p.bc; ctx.beginPath(); ctx.arc(16, 16, 16, 0, Math.PI*2); ctx.fill();
+                    ctx.restore();
+                }
             }
-            // Отрисовка чата в углу
-            ctx.save(); ctx.setTransform(1,0,0,1,0,0);
-            ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillRect(10, 10, 200, chatMessages.length * 20 + 10);
-            ctx.fillStyle = "white"; ctx.font = "12px Arial";
-            chatMessages.forEach((m, i) => {
-                ctx.fillText(m.nick + ": " + m.text, 20, 30 + i * 20);
-            });
-            ctx.restore();
         }
         return r;
     };
-
-    function drawRemotePlayer(p) {
-        ctx.save();
-        if (p.ha) {
-            ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.moveTo(p.x + 16 - camera.x, p.y + 16 - camera.y);
-            ctx.lineTo(p.hx - camera.x, p.hy - camera.y); ctx.stroke();
-        }
-        ctx.translate(p.x - camera.x, p.y - camera.y);
-        ctx.fillStyle = "white"; ctx.font = "10px Arial"; ctx.textAlign = "center";
-        ctx.fillText(p.nick, 16, -5);
-        ctx.fillStyle = p.bc; ctx.beginPath(); ctx.arc(16, 16, 14, 0, Math.PI*2); ctx.fill();
-        ctx.restore();
-    }
 })();
 </script>
 </body>
 </html>
+
 
 
 
