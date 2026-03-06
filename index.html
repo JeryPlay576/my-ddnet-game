@@ -400,8 +400,8 @@ draw();
         mpDiv.style = "margin-top:10px; background:#222; padding:15px; border-radius:12px; border:2px solid #3498db; width:280px; text-align:center;";
         mpDiv.innerHTML = `
             <input type="text" id="mp-nick" value="${myNick}" style="width:90%; margin-bottom:8px; background:#111; color:white; border:1px solid #444; padding:5px; border-radius:4px;">
-            <div id="mp-id" style="font-size:10px; color:#2ecc71; border:1px dashed #2ecc71; padding:8px; cursor:pointer; margin-bottom:8px; word-break:break-all; background:#000;">Нажмите, чтобы получить ID</div>
-            <input type="text" id="join-id" placeholder="ID ДРУГА" style="width:90%; margin-bottom:8px; background:#111; color:white; border:1px solid #444; padding:5px; border-radius:4px;">
+            <div id="mp-id" style="font-size:10px; color:#2ecc71; border:1px dashed #2ecc71; padding:8px; cursor:pointer; margin-bottom:8px; word-break:break-all; background:#000;">Нажмите для ID</div>
+            <input type="text" id="join-id" placeholder="ID ХОСТА" style="width:90%; margin-bottom:8px; background:#111; color:white; border:1px solid #444; padding:5px; border-radius:4px;">
             <button id="btn-connect" style="width:100%; background:#e67e22; color:white; border:none; padding:10px; cursor:pointer; font-weight:bold; border-radius:5px;">ЗАЙТИ К ДРУГУ</button>
             <div id="status-text" style="font-size:10px; color:#888; margin-top:5px;">Статус: Готов</div>
         `;
@@ -424,24 +424,25 @@ draw();
         };
     }
 
-    // 2. ФУНКЦИЯ ЗАПУСКА МИРА (ИНТЕГРАЦИЯ В ДВИЖОК)
+    // 2. ФУНКЦИЯ ЗАПУСКА (ТОЧНО КАК В ТВОЕМ LOADSLOT)
     function startSyncedGame(remoteMap) {
         console.log("Синхронизация...");
         
-        // Передаем данные в твою глобальную переменную map
+        // Копируем карту друга в твою глобальную переменную map
         window.map = JSON.parse(JSON.stringify(remoteMap)); 
         
-        // Активируем игру и скрываем меню, как в твоих функциях loadSlot
+        // АКТИВАЦИЯ ДВИЖКА (Твои системные переменные)
         window.isTutorial = false;
         window.gameActive = true;
         
+        // Переключаем видимость как в твоем коде
         document.getElementById('main-menu').style.display = 'none';
         document.getElementById('hud').style.display = 'block';
-        document.getElementById('hotbar').style.display = 'none'; // Скрываем редактор у гостя
+        document.getElementById('hotbar').style.display = 'none'; // Редактор выключен
         
-        // Сброс позиции твоего персонажа tee
+        // Ставим тебя на спавн
         if (window.tee) {
-            tee.x = 100; tee.y = 100;
+            tee.x = 100; tee.y = 100; // Можно заменить на remoteMap.spawnPoint если он есть
             tee.vx = 0; tee.vy = 0;
             tee.hook.active = false;
         }
@@ -461,7 +462,7 @@ draw();
                 conn.send({ type: 'world', data: window.map });
             }
 
-            // Отправка позиции 30 раз в секунду
+            // Отправка позиции (30 FPS)
             setInterval(() => {
                 if (conn.open && window.gameActive && window.tee) {
                     conn.send({
@@ -486,7 +487,7 @@ draw();
         });
     }
 
-    // 4. ОТРИСОВКА ИГРОКОВ (ВСТРАИВАЕМСЯ В ТВОЙ ЦИКЛ)
+    // 4. ВСТРАИВАЕМ ОТРИСОВКУ ДРУЗЕЙ В ТВОЙ ЦИКЛ
     const originalRAF = window.requestAnimationFrame;
     window.requestAnimationFrame = function(callback) {
         return originalRAF((t) => {
@@ -500,7 +501,7 @@ draw();
             if (id === peer.id) continue;
             const p = players[id];
 
-            // Хук
+            // Рисуем хук другого игрока
             if (p.ha) {
                 ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
                 ctx.beginPath();
@@ -509,15 +510,13 @@ draw();
                 ctx.stroke();
             }
 
-            // Тело Tee друга (используем твои размеры и камеру)
+            // Рисуем тело Tee (используем твою камеру и контекст)
             ctx.save();
             ctx.translate(p.x - camera.x, p.y - camera.y);
             
-            // Ник
             ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
             ctx.fillText(p.n, 16, -10);
 
-            // Тело
             ctx.fillStyle = p.bc;
             ctx.beginPath(); ctx.arc(16, 16, 16, 0, Math.PI * 2); ctx.fill();
             ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
@@ -534,6 +533,7 @@ draw();
 </script>
 </body>
 </html>
+
 
 
 
