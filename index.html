@@ -388,30 +388,29 @@ draw();
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script>
 (function() {
-    // 1. Инициализация PeerJS
     const peer = new Peer();
     let players = {}; 
     let conns = [];
     let myNick = localStorage.getItem('mp-nick') || "Tee_" + Math.floor(Math.random() * 999);
 
-    // 2. Добавляем блок управления в твое существующее меню
+    // 1. ИНТЕРФЕЙС (Встраиваем аккуратно в твой .menu-btns)
     const menu = document.querySelector('.menu-btns');
     if (menu) {
         const mpDiv = document.createElement('div');
         mpDiv.style = "margin-top:10px; background:#222; padding:15px; border-radius:12px; border:2px solid #3498db; width:280px; text-align:center; z-index:10001;";
         mpDiv.innerHTML = `
-            <input type="text" id="mp-nick" value="${myNick}" style="width:90%; margin-bottom:8px; background:#111; color:white; border:1px solid #444; padding:8px; border-radius:5px;">
-            <div id="mp-id" style="font-size:11px; color:#2ecc71; border:1px dashed #2ecc71; padding:10px; cursor:pointer; margin-bottom:10px; background:#000; word-break:break-all;">Нажмите для получения ID</div>
-            <input type="text" id="join-id" placeholder="ID ХОСТА" style="width:90%; margin-bottom:10px; background:#111; color:white; border:1px solid #444; padding:8px; border-radius:5px;">
-            <button id="btn-connect" style="width:100%; background:#e67e22; color:white; border:none; padding:12px; cursor:pointer; font-weight:bold; border-radius:8px; text-transform:uppercase;">Подключиться к другу</button>
-            <div id="status-text" style="font-size:10px; color:#888; margin-top:8px;">Статус: Готов</div>
+            <input type="text" id="mp-nick" value="${myNick}" style="width:90%; margin-bottom:8px; background:#111; color:white; border:1px solid #444; padding:5px; border-radius:4px;">
+            <div id="mp-id" style="font-size:10px; color:#2ecc71; border:1px dashed #2ecc71; padding:8px; cursor:pointer; margin-bottom:8px; word-break:break-all; background:#000;">Жми, чтобы скопировать ID</div>
+            <input type="text" id="join-id" placeholder="ID ХОСТА" style="width:90%; margin-bottom:8px; background:#111; color:white; border:1px solid #444; padding:5px; border-radius:4px;">
+            <button id="btn-connect" style="width:100%; background:#e67e22; color:white; border:none; padding:10px; cursor:pointer; font-weight:bold; border-radius:5px;">ЗАЙТИ К ДРУГУ</button>
+            <div id="status-text" style="font-size:10px; color:#888; margin-top:5px;">Статус: Готов</div>
         `;
         menu.appendChild(mpDiv);
 
         peer.on('open', id => { document.getElementById('mp-id').innerText = id; });
         document.getElementById('mp-id').onclick = () => {
             navigator.clipboard.writeText(peer.id);
-            alert("Ваш ID скопирован! Отправьте его другу.");
+            alert("ID скопирован!");
         };
 
         document.getElementById('btn-connect').onclick = () => {
@@ -419,138 +418,118 @@ draw();
             if (targetId) setupConnection(peer.connect(targetId, {reliable: true}));
         };
         
-        document.getElementById('mp-nick').onchange = (e) => { 
+        document.getElementById('mp-nick').oninput = (e) => { 
             myNick = e.target.value; 
             localStorage.setItem('mp-nick', myNick); 
         };
     }
 
-    // 3. ФУНКЦИЯ АКТИВАЦИИ МИРА (Интеграция в твой движок)
-    function activateMultiplayer(remoteMap) {
-        console.log("Данные получены. Запуск мира...");
-        
-        // Переносим данные карты в твой глобальный объект map
+    // 2. ФУНКЦИЯ ЗАПУСКА (Копирует логику твоего loadSlot)
+    function startSyncedGame(remoteMap) {
+        // Загружаем карту друга в твою переменную map
         window.map = JSON.parse(JSON.stringify(remoteMap)); 
         
-        // ВКЛЮЧАЕМ ДВИЖОК (Твои системные переменные из index.html)
+        // ТВОИ СИСТЕМНЫЕ ФЛАГИ
         window.isTutorial = false;
         window.gameActive = true;
         
-        // УПРАВЛЯЕМ ИНТЕРФЕЙСОМ (Твои ID элементов)
+        // ТВОЙ ИНТЕРФЕЙС
         document.getElementById('main-menu').style.display = 'none';
         document.getElementById('hud').style.display = 'block';
-        document.getElementById('hotbar').style.display = 'none'; // Скрываем редактор у гостя
+        document.getElementById('hotbar').style.display = 'none'; 
         
-        // Сброс твоего персонажа tee
+        // ТВОЙ ИГРОК И КАМЕРА
         if (window.tee) {
-            tee.x = 100; tee.y = 100; // Можно заменить на координаты из remoteMap.spawnPoint
+            tee.x = 100; tee.y = 100; // Дефолтный спавн
             tee.vx = 0; tee.vy = 0;
-            tee.hook.active = false;
-        }
-
-        // Центрируем твою камеру
-        if (window.camera && window.canvas) {
-            camera.x = tee.x - canvas.width / 2;
-            camera.y = tee.y - canvas.height / 2;
+            if (window.camera) {
+                camera.x = tee.x - window.innerWidth/2;
+                camera.y = tee.y - window.innerHeight/2;
+            }
         }
     }
 
-    // 4. СЕТЕВАЯ ЛОГИКА
+    // 3. СЕТЬ
     peer.on('connection', c => setupConnection(c, true));
 
     function setupConnection(conn, isHost) {
         conn.on('open', () => {
             conns.push(conn);
-            const status = document.getElementById('status-text');
-            if(status) { status.innerText = "Статус: В игре!"; status.style.color = "#2ecc71"; }
+            document.getElementById('status-text').innerText = "Статус: Соединено!";
+            document.getElementById('status-text').style.color = "#2ecc71";
 
-            // Если ты хост — отправь свою текущую карту гостю
             if (isHost && window.map) {
-                conn.send({ type: 'world-data', data: window.map });
+                conn.send({ type: 'world', data: window.map });
             }
 
-            // Пакеты позиции (синхронизировано с твоим tee)
+            // Шлем позицию твоего tee
             setInterval(() => {
                 if (conn.open && window.gameActive && window.tee) {
                     conn.send({
-                        type: 'pos', id: peer.id, nick: myNick,
+                        type: 'pos', id: peer.id, n: myNick,
                         x: tee.x, y: tee.y, 
                         bc: document.getElementById('bodyColor').value,
                         fc: document.getElementById('feetColor').value,
                         hx: tee.hook.x, hy: tee.hook.y, ha: tee.hook.active
                     });
                 }
-            }, 33);
+            }, 30);
         });
 
         conn.on('data', data => {
-            if (data.type === 'world-data') {
-                activateMultiplayer(data.data);
-            }
+            if (data.type === 'world') startSyncedGame(data.data);
             if (data.type === 'pos') {
                 players[data.id] = data;
-                // Хост пересылает позиции всем
                 if (isHost) conns.forEach(c => { if(c.open && c.peer !== data.id) c.send(data); });
             }
         });
-        
-        conn.on('close', () => {
-            document.getElementById('status-text').innerText = "Статус: Отключено";
-            conns = conns.filter(item => item !== conn);
-        });
     }
 
-    // 5. ОТРИСОВКА ДРУЗЕЙ (Вклиниваемся в твой игровой цикл)
+    // 4. ОТРИСОВКА ДРУЗЕЙ (Вклиниваемся в твой draw())
     const originalRAF = window.requestAnimationFrame;
     window.requestAnimationFrame = function(callback) {
         return originalRAF((t) => {
             callback(t);
-            // Если играешь и есть контекст canvas — рисуем
             if (window.gameActive && window.ctx) {
-                drawOtherTees();
+                for (let id in players) {
+                    if (id === peer.id) continue;
+                    const p = players[id];
+
+                    // Рисуем хук (белый трос)
+                    if (p.ha) {
+                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+                        ctx.beginPath();
+                        ctx.moveTo(p.x + 16 - camera.x, p.y + 16 - camera.y);
+                        ctx.lineTo(p.hx - camera.x, p.hy - camera.y);
+                        ctx.stroke();
+                    }
+
+                    // Рисуем Tee друга через твою камеру
+                    ctx.save();
+                    ctx.translate(p.x - camera.x, p.y - camera.y);
+                    
+                    ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
+                    ctx.fillText(p.n, 16, -10);
+
+                    ctx.fillStyle = p.bc;
+                    ctx.beginPath(); ctx.arc(16, 16, 16, 0, Math.PI * 2); ctx.fill();
+                    ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
+                    
+                    // Глаза
+                    ctx.fillStyle = 'white';
+                    ctx.beginPath(); ctx.arc(10, 12, 5, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(22, 12, 5, 0, Math.PI*2); ctx.fill();
+                    
+                    ctx.restore();
+                }
             }
         });
     };
-
-    function drawOtherTees() {
-        for (let id in players) {
-            if (id === peer.id) continue;
-            const p = players[id];
-
-            // Отрисовка хука друга (используем твою камеру)
-            if (p.ha) {
-                ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
-                ctx.beginPath();
-                ctx.moveTo(p.x + 16 - camera.x, p.y + 16 - camera.y);
-                ctx.lineTo(p.hx - camera.x, p.hy - camera.y);
-                ctx.stroke();
-            }
-
-            // Отрисовка Tee друга
-            ctx.save();
-            ctx.translate(p.x - camera.x, p.y - camera.y);
-            
-            // Ник
-            ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
-            ctx.fillText(p.nick, 16, -10);
-
-            // Тело
-            ctx.fillStyle = p.bc;
-            ctx.beginPath(); ctx.arc(16, 16, 16, 0, Math.PI * 2); ctx.fill();
-            ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
-            
-            // Глаза (простые)
-            ctx.fillStyle = 'white';
-            ctx.beginPath(); ctx.arc(10, 12, 5, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(22, 12, 5, 0, Math.PI*2); ctx.fill();
-            
-            ctx.restore();
-        }
-    }
 })();
 </script>
 </body>
 </html>
+
 
 
 
