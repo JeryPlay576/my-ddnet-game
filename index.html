@@ -426,29 +426,29 @@ draw();
 
     // 2. ФУНКЦИЯ ЗАПУСКА (ИНТЕГРАЦИЯ В ТВОЙ ДВИЖОК)
     function startSyncedGame(remoteMap) {
-        console.log("Синхронизация...");
+        console.log("Синхронизация с движком...");
         
-        // Передаем данные в твою глобальную переменную map
+        // 1. Клонируем карту в твою глобальную переменную map
         window.map = JSON.parse(JSON.stringify(remoteMap)); 
         
-        // АКТИВАЦИЯ ДВИЖКА (Твои системные переменные)
+        // 2. АКТИВАЦИЯ ДВИЖКА (Твои системные флаги)
         window.isTutorial = false;
         window.gameActive = true;
         
-        // Переключаем видимость как в твоем коде
+        // 3. Управляем твоим DOM-интерфейсом (как в loadSlot)
         document.getElementById('main-menu').style.display = 'none';
         document.getElementById('hud').style.display = 'block';
         document.getElementById('hotbar').style.display = 'none'; 
         
-        // Ставим тебя на спавн и сбрасываем камеру
+        // 4. Сброс позиции игрока и камеры
         if (window.tee) {
             tee.x = 100; tee.y = 100;
             tee.vx = 0; tee.vy = 0;
             tee.hook.active = false;
             
             if (window.camera) {
-                camera.x = tee.x - canvas.width/2;
-                camera.y = tee.y - canvas.height/2;
+                camera.x = tee.x - window.innerWidth/2;
+                camera.y = tee.y - window.innerHeight/2;
             }
         }
     }
@@ -462,11 +462,12 @@ draw();
             document.getElementById('status-text').innerText = "Статус: Подключено!";
             document.getElementById('status-text').style.color = "#2ecc71";
 
+            // Если ты хост — отправь свою текущую карту гостю
             if (isHost && window.map) {
                 conn.send({ type: 'world', data: window.map });
             }
 
-            // Отправка позиции (30 раз в секунду)
+            // Отправка позиции 30 раз в секунду
             const syncInterval = setInterval(() => {
                 if (conn.open && window.gameActive && window.tee) {
                     conn.send({
@@ -498,6 +499,7 @@ draw();
     window.requestAnimationFrame = function(callback) {
         return originalRAF((t) => {
             callback(t);
+            // Если игра активна, рисуем других игроков поверх твоей карты
             if (window.gameActive && window.ctx) drawNetPlayers();
         });
     };
@@ -507,7 +509,7 @@ draw();
             if (id === peer.id) continue;
             const p = players[id];
 
-            // Рисуем хук
+            // Рисуем хук другого игрока
             if (p.ha) {
                 ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
                 ctx.beginPath();
@@ -516,13 +518,15 @@ draw();
                 ctx.stroke();
             }
 
-            // Рисуем тело Tee (используем твою камеру)
+            // Рисуем тело Tee (используем твою камеру и контекст)
             ctx.save();
             ctx.translate(p.x - camera.x, p.y - camera.y);
             
+            // Ник игрока
             ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
             ctx.fillText(p.n, 16, -10);
 
+            // Само тело
             ctx.fillStyle = p.bc;
             ctx.beginPath(); ctx.arc(16, 16, 16, 0, Math.PI * 2); ctx.fill();
             ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
@@ -539,6 +543,7 @@ draw();
 </script>
 </body>
 </html>
+
 
 
 
