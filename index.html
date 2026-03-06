@@ -391,19 +391,19 @@ draw();
     const peer = new Peer();
     let players = {}; 
     let connections = [];
-    let chatMessages = [{ nick: "СИСТЕМА", text: "Введите ID хоста и нажмите кнопку", isSystem: true }]; 
+    let chatMessages = [{ nick: "СИСТЕМА", text: "Введите ID и нажмите войти", isSystem: true }]; 
     let myName = localStorage.getItem('mp-nick') || "Player_" + Math.floor(Math.random() * 999);
 
     // 1. ИНТЕРФЕЙС
     const menuBtns = document.querySelector('.menu-btns');
     if (menuBtns) {
         const mpBox = document.createElement('div');
-        mpBox.style = "margin-top:10px; background:#222; padding:15px; border-radius:12px; border:2px solid #3498db; color:white; width:280px; text-align:center;";
+        mpBox.style = "margin-top:10px; background:#222; padding:15px; border-radius:12px; border:2px solid #3498db; color:white; width:280px; text-align:center; z-index:9999;";
         mpBox.innerHTML = `
             <input type="text" id="n-in" value="${myName}" style="width:100%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444;">
-            <div id="m-id" style="font-size:10px; color:#888; margin-bottom:8px; background:#000; padding:5px;">ID...</div>
+            <div id="m-id" style="font-size:10px; color:#888; margin-bottom:8px; background:#000; padding:5px; word-break:break-all;">ID...</div>
             <input type="text" id="h-id" placeholder="ID ХОСТА" style="width:100%; padding:8px; margin-bottom:8px; background:#111; color:white; border:1px solid #444;">
-            <button id="m-jn" style="width:100%; background:#e67e22; color:white; border:none; padding:12px; cursor:pointer; font-weight:bold;">ЗАЙТИ В МИР ДРУГА</button>
+            <button id="m-jn" style="width:100%; background:#e67e22; color:white; border:none; padding:12px; cursor:pointer; font-weight:bold; border-radius:5px;">ЗАЙТИ В МИР ДРУГА</button>
         `;
         menuBtns.appendChild(mpBox);
 
@@ -415,43 +415,46 @@ draw();
         document.getElementById('n-in').oninput = (e) => { myName = e.target.value; localStorage.setItem('mp-nick', myName); };
     }
 
-    // 2. ЛОГИКА ВХОДА (ЧЕРЕЗ ПЕРЕЗАПИСЬ ПЕРВОГО СЛОТА)
-    function injectAndStart(mapData) {
-        console.log("Впрыскиваем данные в Слот 1...");
+    // 2. ГЛУБОКАЯ СИНХРОНИЗАЦИЯ (РЕШЕНИЕ ЧЕРНОГО ЭКРАНА)
+    function forceSyncWorld(remoteMap) {
+        console.log("Начинаю жесткую синхронизацию...");
         
-        // Перезаписываем ПЕРВЫЙ слот (индекс 0) картой хоста
-        // Мы пишем во все возможные варианты ключей, которые может юзать твой движок
-        const mapString = JSON.stringify(mapData);
-        localStorage.setItem('map_0', mapString);
-        localStorage.setItem('map0', mapString);
-        localStorage.setItem('save_0', mapString);
-        localStorage.setItem('save0', mapString);
+        // Отдельная ячейка в памяти, как ты просил
+        localStorage.setItem('SYSTEM_MP_WORLD_DATA', JSON.stringify(remoteMap));
 
-        addChatMessage("СИСТЕМА", "Синхронизация... Заходим!");
+        // 1. Полностью заменяем глобальный объект карты
+        window.map = JSON.parse(JSON.stringify(remoteMap)); 
 
-        setTimeout(() => {
-            // Ищем первую кнопку "Карта 1" в твоем меню
-            // Обычно это первый элемент с классом 'slot' или первая кнопка в menu-btns
-            const firstSlotBtn = document.querySelector('.menu-btns button') || document.querySelector('.slot');
+        // 2. Если в игре есть массив блоков (например, window.blocks), заменяем его
+        if (Array.isArray(window.blocks)) {
+            window.blocks.length = 0; // Очищаем старые
+            remoteMap.blocks.forEach(b => window.blocks.push(b));
+        }
+
+        // 3. Сбрасываем персонажа и камеру
+        if (typeof tee !== 'undefined') {
+            tee.x = remoteMap.spawn ? remoteMap.spawn.x : 400;
+            tee.y = remoteMap.spawn ? remoteMap.spawn.y : 400;
+            tee.vx = 0; tee.vy = 0;
             
-            if (firstSlotBtn) {
-                firstSlotBtn.click(); // Симулируем реальное нажатие
-            } else {
-                // Если кнопку не нашли, вызываем функцию напрямую
-                if (typeof loadGame === 'function') loadGame(0);
-                else if (typeof selectSlot === 'function') selectSlot(0);
+            if (typeof camera !== 'undefined') {
+                camera.x = tee.x - (window.innerWidth / 2);
+                camera.y = tee.y - (window.innerHeight / 2);
             }
+        }
 
-            // На всякий случай скрываем меню через 300мс
-            setTimeout(() => {
-                const mm = document.getElementById('main-menu');
-                if (mm) mm.style.display = 'none';
-                window.gameActive = true;
-            }, 300);
-        }, 200);
+        // 4. Закрываем меню и активируем игру
+        const mm = document.getElementById('main-menu');
+        if (mm) mm.style.display = 'none';
+        window.gameActive = true;
+
+        // 5. Вызываем перерисовку
+        if (typeof drawMap === 'function') drawMap();
+        
+        addChatMessage("СИСТЕМА", "Мир синхронизирован вручную!");
     }
 
-    // 3. СЕТЬ
+    // 3. СЕТЕВАЯ ЛОГИКА
     peer.on('connection', c => setup(c, true));
 
     function setup(conn, isHost) {
@@ -476,7 +479,7 @@ draw();
 
         conn.on('data', data => {
             if (data.type === 'world_sync') {
-                injectAndStart(data.mapData);
+                forceSyncWorld(data.mapData);
             }
             if (data.type === 'pos') {
                 players[data.id] = data;
@@ -488,10 +491,10 @@ draw();
         });
     }
 
-    // 4. ОТРИСОВКА ИГРОКОВ
+    // 4. ОТРИСОВКА
     function addChatMessage(nick, text) {
         chatMessages.push({ nick, text });
-        if (chatMessages.length > 8) chatMessages.shift();
+        if (chatMessages.length > 5) chatMessages.shift();
     }
 
     const nRAF = window.requestAnimationFrame;
@@ -499,36 +502,39 @@ draw();
         const r = nRAF(cb);
         if (window.gameActive && typeof ctx !== 'undefined') {
             for (let id in players) { 
-                if (id !== peer.id) {
-                    const p = players[id];
-                    ctx.save();
-                    // Отрисовка хука
-                    if (p.ha) {
-                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
-                        ctx.beginPath(); ctx.moveTo(p.x + 16 - camera.x, p.y + 16 - camera.y);
-                        ctx.lineTo(p.hx - camera.x, p.hy - camera.y); ctx.stroke();
-                    }
-                    // Тело игрока
-                    ctx.translate(p.x - camera.x, p.y - camera.y);
-                    ctx.fillStyle = "white"; ctx.textAlign = "center";
-                    ctx.fillText(p.nick, 16, -10);
-                    ctx.fillStyle = p.bc; ctx.beginPath(); ctx.arc(16, 16, 16, 0, Math.PI*2); ctx.fill();
-                    ctx.restore();
-                }
+                if (id !== peer.id) drawRemotePlayer(players[id]);
             }
-            // Отрисовка чата
-            ctx.save(); ctx.setTransform(1,0,0,1,0,0);
-            chatMessages.forEach((m, i) => {
-                ctx.fillStyle = "white"; ctx.fillText(m.nick + ": " + m.text, 20, 30 + i*20);
-            });
-            ctx.restore();
+            drawHUD();
         }
         return r;
     };
+
+    function drawHUD() {
+        ctx.save(); ctx.setTransform(1,0,0,1,0,0);
+        ctx.fillStyle = "white"; ctx.font = "14px Arial";
+        chatMessages.forEach((m, i) => {
+            ctx.fillText(m.nick + ": " + m.text, 20, 30 + i * 20);
+        });
+        ctx.restore();
+    }
+
+    function drawRemotePlayer(p) {
+        ctx.save();
+        if (p.ha) {
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(p.x + 16 - camera.x, p.y + 16 - camera.y);
+            ctx.lineTo(p.hx - camera.x, p.hy - camera.y); ctx.stroke();
+        }
+        ctx.translate(p.x - camera.x, p.y - camera.y);
+        ctx.fillStyle = "white"; ctx.textAlign = "center"; ctx.fillText(p.nick, 16, -10);
+        ctx.fillStyle = p.bc; ctx.beginPath(); ctx.arc(16, 16, 16, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+    }
 })();
 </script>
 </body>
 </html>
+
 
 
 
